@@ -1,0 +1,75 @@
+#!/bin/sh
+# The compositor's session command: builds the list of sessions to offer, runs
+# the picker, and records what it chose.
+#
+# This is a separate file because kwin does not forward the output of the
+# application it hosts — a line printed by the picker never reaches the process
+# that started kwin. So the capture happens here, one level down, where qml is a
+# direct child, and the answer leaves through PICKER_CHOICE_FILE.
+#
+# Not meant to be run by hand; bin/steam-session-picker sets it up.
+set -u
+
+# Directories SDDM and steamos-manager look in. Ours first, so a session shipped
+# alongside the picker wins over a stock one of the same name.
+SESSION_DIRS="${PICKER_UI_DIR:-$(dirname -- "$0")/..}/share/wayland-sessions
+/usr/local/share/wayland-sessions
+/usr/local/share/xsessions
+/usr/share/wayland-sessions
+/usr/share/xsessions"
+
+json_escape() {
+    printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+# Desktop entries carry one plain key and a long tail of Name[xx]= translations;
+# only the untranslated one is wanted.
+entry_field() {
+    sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n 1
+}
+
+find_entry() {
+    printf '%s\n' "$SESSION_DIRS" | while read -r dir; do
+        [ -n "$dir" ] || continue
+        if [ -f "$dir/$1" ]; then
+            printf '%s\n' "$dir/$1"
+            break
+        fi
+    done | head -n 1
+}
+
+# Which of the three drawn icons suits a session. Everything unrecognised is a
+# desktop, which is what an unknown session most likely is.
+icon_for() {
+    case $(printf '%s' "$1" | tr '[:upper:]' '[:lower:]') in
+    *kodi* | *jellyfin* | *plex* | *mpv* | *media* | *kino*) printf 'media' ;;
+    *game* | *steam* | *retro* | *emulation*) printf 'game' ;;
+    *) printf 'desktop' ;;
+    esac
+}
+
+# Game Mode is hand-written rather than discovered: steamos-manager refuses any
+# session whose name contains "gamescope", so it never appears in the list below
+# and has its own steamosctl verb.
+sessions='{"title":"Game Mode","subtitle":"Steam","kind":"game","target":"game-mode"}'
+
+for name in $(steamosctl get-valid-desktop-sessions 2>/dev/null | sed -n 's/^- //p'); do
+    # Never offer the picker itself.
+    [ "$name" = "${PICKER_SESSION_NAME:-picker.desktop}" ] && continue
+
+    entry=$(find_entry "$name")
+    title=$(entry_field "$entry" Name)
+    subtitle=$(entry_field "$entry" Comment)
+    [ -n "$title" ] || title="$name"
+    [ -n "$subtitle" ] || subtitle="$name"
+
+    sessions="$sessions,{\"title\":\"$(json_escape "$title")\",\"subtitle\":\"$(json_escape "$subtitle")\",\"kind\":\"$(icon_for "$name$title")\",\"target\":\"desktop:$name\"}"
+done
+
+choice=$(
+    qml "$PICKER_QML" -- --fullscreen --sessions="[$sessions]" 2>&1 |
+        sed -n 's/.*PICKER_CHOICE:\(.*\)$/\1/p' |
+        tail -n 1
+) || true
+
+printf '%s\n' "$choice" >"$PICKER_CHOICE_FILE"

@@ -1,0 +1,63 @@
+#!/bin/sh
+# Session entry point. This is what picker.desktop runs on the target.
+#
+# It starts kwin with the picker as its only session, reads back what the picker
+# chose, and hands that to steamosctl. The UI half never executes anything —
+# everything that touches the system lives here.
+#
+# Runs on SteamOS, where qml and kwin_wayland come from the image itself.
+set -eu
+
+BIN_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+PICKER_QML="${PICKER_UI_DIR:-$BIN_DIR/../ui}/Picker.qml"
+PICKER_CHOICE_FILE=$(mktemp -t picker-choice.XXXXXX)
+export PICKER_QML PICKER_CHOICE_FILE
+
+# Qt hands its logging to journald when built with journald support, in which
+# case console.log() never reaches stderr at all. Observed off-target; harmless
+# where Qt logs to stderr anyway.
+export QT_FORCE_STDERR_LOGGING=1
+
+# The session is a script rather than `-- qml Picker.qml -- --fullscreen`,
+# because kwin mangles anything after a second `--`: the qml runtime then gets
+# no file at all and dies with "No files specified".
+kwin_wayland --no-lockscreen --no-global-shortcuts -- "$BIN_DIR/compositor-session" || true
+
+choice=$(cat "$PICKER_CHOICE_FILE" 2>/dev/null || true)
+rm -f "$PICKER_CHOICE_FILE"
+
+run() {
+    if [ -n "${PICKER_DRY_RUN:-}" ]; then
+        printf 'picker: dry run: %s\n' "$*" >&2
+        return 0
+    fi
+    exec "$@"
+}
+
+case "$choice" in
+game-mode)
+    run steamosctl switch-to-game-mode
+    ;;
+desktop:*)
+    session=${choice#desktop:}
+    # The picker is trusted, the parser should not be: only a plain desktop
+    # entry name may reach the command line.
+    case "$session" in
+    "" | *[!A-Za-z0-9._-]*)
+        printf 'picker: refusing malformed session name: %s\n' "$session" >&2
+        exit 1
+        ;;
+    esac
+    run steamosctl switch-to-desktop-mode "$session"
+    ;;
+none | "")
+    # Cancelled, or the picker died before choosing. With Relogin=true SDDM
+    # brings it straight back, which is the intended behaviour.
+    exit 0
+    ;;
+*)
+    printf 'picker: unknown choice: %s\n' "$choice" >&2
+    exit 1
+    ;;
+esac
