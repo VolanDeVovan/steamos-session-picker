@@ -107,8 +107,10 @@ install)
 update)
     need git
     git -C "$ROOT" pull --ff-only
-    register
-    printf 'updated and re-registered\n'
+    # Re-exec rather than carrying on: the pull just rewrote this very file, and
+    # a running shell keeps reading its script from the changed offset. Observed
+    # doing exactly that — the old register() ran after a new one was pulled in.
+    exec "$ROOT/install.sh" install
     ;;
 try)
     require_registered
