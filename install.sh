@@ -37,7 +37,10 @@ need() {
 }
 
 register() {
-    need qml
+    # Not `need qml`: on SteamOS that finds qt5-declarative's binary, which
+    # cannot load this UI at all. bin/qml-runtime picks the Qt 6 one.
+    qml_bin=$("$ROOT/bin/qml-runtime") || exit 1
+    printf 'qml runtime: %s\n' "$qml_bin"
     need kwin_wayland
     need steamosctl
 

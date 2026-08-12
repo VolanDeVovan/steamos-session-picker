@@ -65,8 +65,16 @@ for name in $(steamosctl get-valid-desktop-sessions 2>/dev/null | sed -n 's/^- /
     sessions="$sessions,{\"title\":\"$(json_escape "$title")\",\"subtitle\":\"$(json_escape "$subtitle")\",\"kind\":\"$(icon_for "$name$title")\",\"target\":\"desktop:$name\"}"
 done
 
+QML=$("$(dirname -- "$0")/qml-runtime")
+
+# Everything the picker printed is kept: when it fails to start, this file is
+# the only place that says why. Without it the sed below swallows the error and
+# the screen just stays black.
+LOG="${PICKER_LOG:-${XDG_RUNTIME_DIR:-/tmp}/steamos-session-picker.log}"
+
 choice=$(
-    qml "$PICKER_QML" -- --fullscreen --sessions="[$sessions]" 2>&1 |
+    "$QML" "$PICKER_QML" -- --fullscreen --sessions="[$sessions]" 2>&1 |
+        tee -a "$LOG" |
         sed -n 's/.*PICKER_CHOICE:\(.*\)$/\1/p' |
         tail -n 1
 ) || true

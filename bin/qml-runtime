@@ -1,0 +1,22 @@
+#!/bin/sh
+# Print the path of a Qt 6 qml runtime, or fail.
+#
+# SteamOS ships both, and the wrong one looks like a black screen: /usr/bin/qml
+# belongs to qt5-declarative 5.15 and rejects the versionless imports this
+# project uses —
+#
+#   Picker.qml: Library import requires a version
+#
+# — while qt6-declarative installs /usr/lib/qt6/bin/qml and a qml6 alias. The
+# choice is made here so both halves agree on it. PICKER_QML_BIN overrides.
+set -eu
+
+for candidate in ${PICKER_QML_BIN:-} qml6 /usr/lib/qt6/bin/qml qml; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+        printf '%s\n' "$candidate"
+        exit 0
+    fi
+done
+
+printf 'no Qt 6 qml runtime found (looked for qml6, /usr/lib/qt6/bin/qml, qml)\n' >&2
+exit 1
