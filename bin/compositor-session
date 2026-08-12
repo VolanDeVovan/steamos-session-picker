@@ -80,3 +80,18 @@ choice=$(
 ) || true
 
 printf '%s\n' "$choice" >"$PICKER_CHOICE_FILE"
+printf 'picker: chose [%s], recorded in %s\n' "$choice" "$PICKER_CHOICE_FILE" >>"$LOG"
+
+# kwin keeps holding the screen after the session it hosts exits — measured on a
+# Steam Machine, where it sat there for as long as it was left alone. It does
+# stop on SIGTERM, and this script is its direct child, so it is asked to.
+#
+# The parent is checked by name first. An earlier version signalled $PPID
+# blindly and, run somewhere the parent was not a compositor, killed a login
+# session that had nothing to do with the picker.
+parent=$(ps -o comm= -p "$PPID" 2>/dev/null | tr -d ' ')
+if [ "$parent" = "kwin_wayland" ]; then
+    kill -TERM "$PPID" 2>/dev/null || true
+else
+    printf 'picker: parent is %s, not the compositor — leaving it alone\n' "${parent:-unknown}" >>"$LOG"
+fi
