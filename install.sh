@@ -1,9 +1,12 @@
 #!/bin/sh
 # Register the session picker with SteamOS. Run it on the machine.
 #
-# The checkout is the installation: nothing is copied anywhere. This script
-# points SDDM and steamos-manager at the directory it is sitting in, which is
-# why updating is just `git pull` — see `./install.sh update`.
+# The checkout is the installation: nothing is copied anywhere. Only two things
+# land outside it, and neither overrides any configuration — see docs/install.md
+# for why that is possible at all:
+#
+#   /var/lib/steamos-session-picker/  the session entry, and the overlay's workdir
+#   /etc/systemd/system/usr-local-share.mount
 #
 # Deliberately split into steps. Registering is harmless and reversible; making
 # the picker the default login session is not, because SDDM here runs with
@@ -23,8 +26,8 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 SESSION="picker.desktop" # must not contain "gamescope": steamos-manager rejects those
-SDDM_DROPIN="/etc/sddm.conf.d/00-steamos-session-picker.conf"
-ENV_DROPIN="$HOME/.config/environment.d/steamos-session-picker.conf"
+STATE="/var/lib/steamos-session-picker"
+MOUNT_UNIT="/etc/systemd/system/usr-local-share.mount"
 
 need() {
     command -v "$1" >/dev/null 2>&1 || {
@@ -38,16 +41,18 @@ register() {
     need kwin_wayland
     need steamosctl
 
-    # Nothing here touches the read-only rootfs, so `steamos-readonly disable`
-    # is never needed, and both locations survive an OS update by themselves:
-    #   the checkout      lives under /opt, a bind mount of the home partition
-    #   /etc/sddm.conf.d  is already on the default keep list
-    # Same shape Tailscale uses on SteamOS. See docs/install.md.
+    # Both SDDM and steamos-manager already search /usr/local/share: it is in
+    # SDDM's built-in SessionDir and in the stock XDG_DATA_DIRS. It is also on
+    # the read-only rootfs. So rather than reconfiguring either of them, the
+    # session entry is added to that directory with an overlay — the same
+    # mechanism SteamOS itself uses for /etc.
+    #
+    # The upper layer has to live on /var, not in the checkout: the home
+    # partition is mounted with casefold, and overlayfs refuses a
+    # case-insensitive-capable filesystem as an upper layer.
+    sudo install -d "$STATE/upper/wayland-sessions" "$STATE/work"
 
-    # Generated rather than committed: the Exec line needs an absolute path,
-    # which is only known once the repository has been cloned somewhere.
-    mkdir -p "$ROOT/share/wayland-sessions"
-    cat >"$ROOT/share/wayland-sessions/$SESSION" <<EOF
+    sudo tee "$STATE/upper/wayland-sessions/$SESSION" >/dev/null <<EOF
 [Desktop Entry]
 Name=Session picker
 Comment=Choose which session to start
@@ -56,22 +61,37 @@ Type=Application
 DesktopNames=picker
 EOF
 
-    # Two consumers have to find the session: SDDM reads SessionDir to offer it,
-    # and steamos-manager validates set-default-desktop-session against its own
-    # XDG_DATA_DIRS. Both lists keep the stock directories.
-    sudo install -d /etc/sddm.conf.d
-    printf '[General]\nSessionDir=%s/share/wayland-sessions,/usr/local/share/wayland-sessions,/usr/share/wayland-sessions\n' \
-        "$ROOT" | sudo tee "$SDDM_DROPIN" >/dev/null
+    # /etc/systemd/system/*.mount is on the atomic-update keep list, so this
+    # survives OS updates untouched.
+    sudo tee "$MOUNT_UNIT" >/dev/null <<EOF
+[Unit]
+Description=Overlay /usr/local/share, adding a session without touching the read-only rootfs
+Documentation=https://github.com/VolanDeVovan/steamos-session-picker
+ConditionPathIsDirectory=$STATE/upper/wayland-sessions
+Before=sddm.service
 
-    mkdir -p "$(dirname "$ENV_DROPIN")"
-    printf 'XDG_DATA_DIRS=%s/share:/usr/local/share:/usr/share\n' "$ROOT" >"$ENV_DROPIN"
+[Mount]
+What=overlay
+Where=/usr/local/share
+Type=overlay
+Options=lowerdir=/usr/local/share,upperdir=$STATE/upper,workdir=$STATE/work
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    sudo systemctl daemon-reload
+    sudo systemctl reenable usr-local-share.mount >/dev/null
+    sudo systemctl restart usr-local-share.mount
+
+    # steamos-manager caches nothing, but it read the old directory list at
+    # start, so give it the mounted one.
+    systemctl --user restart steamos-manager.service
 }
 
 require_registered() {
     if ! steamosctl get-valid-desktop-sessions 2>/dev/null | grep -q "$SESSION"; then
-        printf 'install: %s is not registered yet.\n' "$SESSION" >&2
-        printf 'Run `%s install`, then log out and back in so XDG_DATA_DIRS reaches\n' "$0" >&2
-        printf 'the steamos-manager user daemon.\n' >&2
+        printf 'install: %s is not registered. Run `%s install` first.\n' "$SESSION" "$0" >&2
         exit 1
     fi
 }
@@ -80,9 +100,9 @@ case "${1:-install}" in
 install)
     register
     printf 'registered from %s\n' "$ROOT"
-    printf '\nLog out and back in, then check it is visible:\n'
-    printf '  steamosctl get-valid-desktop-sessions\n'
-    printf 'Then try it for one boot:  %s try\n' "$0"
+    printf 'sessions now offered: %s\n' \
+        "$(steamosctl get-valid-desktop-sessions | sed -n 's/^- //p' | tr '\n' ' ')"
+    printf '\nTry it for one boot:  %s try\n' "$0"
     ;;
 update)
     need git
@@ -108,9 +128,11 @@ disable)
     ;;
 uninstall)
     steamosctl set-default-login-mode game || true
-    sudo rm -f "$SDDM_DROPIN"
-    rm -f "$ENV_DROPIN"
-    rm -rf "$ROOT/share"
+    sudo systemctl disable --now usr-local-share.mount || true
+    sudo rm -f "$MOUNT_UNIT"
+    sudo systemctl daemon-reload
+    sudo rm -rf "$STATE"
+    systemctl --user restart steamos-manager.service || true
     printf 'unregistered. The checkout at %s is still there; remove it if you want it gone.\n' "$ROOT"
     ;;
 *)

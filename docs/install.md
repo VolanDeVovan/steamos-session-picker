@@ -47,11 +47,10 @@ What the default list already covers, verbatim from the machine:
 Discarded files are not lost immediately: a copy goes to `/etc/previous`, and up
 to five snapshots are kept in `/var/lib/steamos-atomupd/etc_backup`.
 
-**`/etc/sddm.conf.d/*` is on that default list.** Everything this project puts
-in `/etc` therefore survives updates without registering anything. An earlier
-version of these notes claimed the opposite and made the installer print a
-warning about re-applying the drop-in after updates; that was wrong, and the
-warning is gone.
+**`/etc/systemd/system/*.mount` is on that default list**, and that is the only
+file this project puts in `/etc`. It therefore survives updates with nothing
+registered in `/etc/atomic-update.conf.d` — unlike Tailscale, which does need an
+entry because `/etc/default/tailscaled` is not covered by the defaults.
 
 ## How other third-party software does it on this machine
 
@@ -77,6 +76,64 @@ themselves point at for the keep-list mechanism.
 The common shape: **payload on a persistent partition, a couple of small files
 in `/etc`, rootfs never touched.**
 
+## Adding a session to a read-only OS without reconfiguring anything
+
+Two things have to find a session before it can be used: SDDM offers it, and
+`steamos-manager` validates it for `set-default-desktop-session`. Neither has an
+extension point — `/etc/steamos-manager` is empty, and the daemon's
+`valid_desktop_sessions()` reads nothing but `XDG_DATA_DIRS`:
+
+```rust
+for dir in BaseDirectories::new().data_dirs
+    .into_iter()
+    .flat_map(|dir| [dir.join("wayland-sessions"), dir.join("xsessions")])
+```
+
+Note `data_dirs`, not `data_home`: `~/.local/share/wayland-sessions` is never
+looked at. Valve's assumption is that sessions arrive in the OS image, which is
+how Bazzite, ChimeraOS and Jovian do it — they build the image. On stock SteamOS
+that is not available.
+
+But both consumers already search **`/usr/local/share`**: it is in SDDM's
+built-in `SessionDir`, and in the stock `XDG_DATA_DIRS`. It is also on the
+read-only rootfs. So the session does not need any configuration changed — it
+needs to *appear* in a directory that is already searched:
+
+```ini
+# /etc/systemd/system/usr-local-share.mount
+[Mount]
+What=overlay
+Where=/usr/local/share
+Type=overlay
+Options=lowerdir=/usr/local/share,upperdir=/var/lib/steamos-session-picker/upper,workdir=/var/lib/steamos-session-picker/work
+```
+
+This is the same mechanism SteamOS uses for `/etc`, and it composes rather than
+replaces: `/usr/local/share/applications` and `/usr/local/share/man` stay
+visible, and after an OS update the new rootfs becomes the lower layer, so
+nothing is shadowed. `/etc/systemd/system/*.mount` is on the default keep list,
+so the unit survives updates too.
+
+**The upper layer cannot live in the checkout.** `/opt` is a bind mount of the
+home partition, which SteamOS formats with `casefold` for case-insensitive game
+directories, and overlayfs refuses that:
+
+```
+overlay: case-insensitive capable filesystem on /opt/... not supported
+```
+
+`/var` is a separate ext4 partition without `casefold`, and persists across
+updates, so the upper and work directories live there.
+
+### What was tried first, and why it was dropped
+
+Pointing the two consumers at the checkout instead — an SDDM `SessionDir`
+drop-in plus `XDG_DATA_DIRS` for the daemon. It works, but it needs two config
+overrides rather than none, and the second one is nastier than it looks:
+`~/.config/environment.d` is **not** enough, because the session pushes its own
+`XDG_DATA_DIRS` into the user manager after it starts and overwrites it. Only a
+unit-level `Environment=` survives that. Both were measured on hardware.
+
 ## How this installs: the checkout is the installation
 
 ```sh
@@ -88,11 +145,11 @@ over to `install.sh`. Nothing is copied out of the checkout — `install.sh` onl
 points the system at the directory it is sitting in:
 
 ```
-/opt/steamos-session-picker/                        the clone; the payload is bin/ and ui/
-/opt/steamos-session-picker/share/wayland-sessions/picker.desktop
-                                                  generated, gitignored, Exec is absolute
-/etc/sddm.conf.d/00-steamos-session-picker.conf     SessionDir, includes the above
-~/.config/environment.d/steamos-session-picker.conf XDG_DATA_DIRS, includes the above
+/opt/steamos-session-picker/                     the clone; the payload is bin/ and ui/
+/var/lib/steamos-session-picker/upper/wayland-sessions/picker.desktop
+                                                 the session entry; Exec points into the clone
+/var/lib/steamos-session-picker/work/            the overlay's workdir
+/etc/systemd/system/usr-local-share.mount        the overlay
 ```
 
 Consequences of that choice, which is why it is made:
@@ -110,10 +167,8 @@ Consequences of that choice, which is why it is made:
 There is no compiler and no package manager in any of this: SteamOS already
 ships `qml` (qt6-declarative) and `kwin_wayland`, which is the entire runtime.
 
-Two drop-ins rather than one because two different things have to find the
-session: SDDM reads `SessionDir` to offer it, while `steamos-manager` validates
-the name passed to `set-default-desktop-session` against its own
-`XDG_DATA_DIRS`.
+No configuration file of SDDM's or steamos-manager's is touched at all; see the
+section above for why that is possible.
 
 ### Why the steps are separate
 
@@ -125,13 +180,6 @@ the screen is stuck.
 
 ## Still open
 
-- **Whether `~/.config/environment.d` actually reaches the steamos-manager user
-  daemon.** This is the one unproven link in the chain; if the session does not
-  appear in `steamosctl get-valid-desktop-sessions` after a re-login, the
-  fallbacks are `systemctl --user set-environment`, a unit drop-in for
-  `steamos-manager.service`, or a bind mount into
-  `/usr/local/share/wayland-sessions` via a unit in `/etc/systemd/system`
-  (which the default keep list preserves).
 - **`kodi.desktop` does not exist yet.** The machine currently offers only
   `plasma.desktop` and `plasmax11.desktop`. Installing Kodi as its own session
   is separate work; until then that card would fail.

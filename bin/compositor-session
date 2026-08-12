@@ -10,10 +10,9 @@
 # Not meant to be run by hand; bin/steam-session-picker sets it up.
 set -u
 
-# Directories SDDM and steamos-manager look in. Ours first, so a session shipped
-# alongside the picker wins over a stock one of the same name.
-SESSION_DIRS="${PICKER_UI_DIR:-$(dirname -- "$0")/..}/share/wayland-sessions
-/usr/local/share/wayland-sessions
+# The directories steamos-manager enumerates, in its own order. The picker's own
+# entry is installed into /usr/local/share/wayland-sessions like any other.
+SESSION_DIRS="/usr/local/share/wayland-sessions
 /usr/local/share/xsessions
 /usr/share/wayland-sessions
 /usr/share/xsessions"

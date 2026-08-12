@@ -96,11 +96,17 @@ stuck.
 
 Nothing is compiled, no packages are installed, and the read-only rootfs is
 never touched: SteamOS already ships `qml` and `kwin_wayland`, which is the
-entire runtime. Everything lands in `/opt` — a bind mount of the home partition
-— and one drop-in in `/etc/sddm.conf.d`, which is on SteamOS's default
-atomic-update keep list. Both survive OS updates on their own. This is the same
-shape Tailscale uses on SteamOS; the details are in
-[docs/install.md](docs/install.md).
+entire runtime.
+
+Nor is any configuration overridden. SDDM and `steamos-manager` both already
+search `/usr/local/share`, which happens to sit on the read-only rootfs — so
+instead of reconfiguring either of them, the session entry is added to that
+directory through an overlay mount, the same mechanism SteamOS uses for `/etc`.
+Existing contents stay visible, and after an OS update the new rootfs simply
+becomes the lower layer. The one unit in `/etc/systemd/system` is on SteamOS's
+default atomic-update keep list, so it survives updates on its own. The details,
+including why the overlay's upper layer cannot live on the home partition, are
+in [docs/install.md](docs/install.md).
 
 ## Adding a session
 
