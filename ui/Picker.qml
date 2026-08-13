@@ -61,6 +61,13 @@ Window {
     }
 
     property int currentIndex: 0
+
+    // Which input the room is actually using. A controller offers both at once —
+    // the Steam Controller's right trackpad is a mouse — so a thumb resting on
+    // it would otherwise fight the d-pad for the selection, and the cursor would
+    // sit on the television for the whole time. Whichever was used last wins,
+    // and the cursor is hidden while it is not the pointer.
+    property bool pointerActive: false
     property bool launching: false
     property string launchingTitle: ""
 
@@ -146,11 +153,39 @@ Window {
         Keys.onSpacePressed: root.activate()
         Keys.onEscapePressed: root.cancel()
         Keys.onPressed: function (event) {
+            // Any key means the pointer is not what is being used.
+            root.pointerActive = false;
+
             // Number keys as direct shortcuts: 1 = first card, and so on.
             if (event.key >= Qt.Key_1 && event.key < Qt.Key_1 + root.sessions.length) {
                 root.currentIndex = event.key - Qt.Key_1;
                 root.activate();
                 event.accepted = true;
+            }
+        }
+
+        // Keeps the cursor hidden away from the cards as well. It reports real
+        // movement the same way a card does, because the compositor delivers a
+        // motion event for the cursor it parks on screen at startup.
+        MouseArea {
+            id: background
+
+            property real originX: -1
+            property real originY: -1
+
+            anchors.fill: parent
+            hoverEnabled: true
+            acceptedButtons: Qt.NoButton
+            cursorShape: root.pointerActive ? Qt.ArrowCursor : Qt.BlankCursor
+
+            onPositionChanged: function (mouse) {
+                if (originX < 0) {
+                    originX = mouse.x;
+                    originY = mouse.y;
+                    return;
+                }
+                if (Math.abs(mouse.x - originX) + Math.abs(mouse.y - originY) > 8 * root.u)
+                    root.pointerActive = true;
             }
         }
 
@@ -308,8 +343,12 @@ Window {
                         kind: modelData.kind
                         selected: root.currentIndex === index
                         focusScale: root.focusScale
+                        pointerActive: root.pointerActive
 
-                        onPointerEntered: root.currentIndex = index
+                        onPointerEntered: {
+                            root.pointerActive = true;
+                            root.currentIndex = index;
+                        }
                         onActivated: {
                             root.currentIndex = index;
                             root.activate();

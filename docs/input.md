@@ -59,3 +59,21 @@ A bridge that converts joystick events into keys (evdev to uinput) was written
 and then deleted: it answered a problem that does not exist on this hardware. If
 a pad that has no lizard mode ever needs supporting, write it then — and against
 the stdlib, since stock SteamOS has no python-evdev.
+
+
+## Whichever input was used last wins
+
+A controller is not only a controller: the Steam Controller's right trackpad is
+a mouse, and the puck publishes it as one. So a thumb resting on the pad emits
+motion the whole time, which would drag the selection around under the d-pad and
+leave a cursor sitting on the television.
+
+The picker therefore tracks which input is in use. Any key — from a keyboard,
+from the pad in lizard mode, or from the TV remote through `cecd` — hides the
+cursor and stops hover from touching the selection. Real pointer movement, more
+than about eight design pixels, brings it back and hands the selection to
+whatever it is over.
+
+The threshold matters: the compositor delivers a motion event for the cursor it
+parks in the middle of the screen at startup, so anything simpler would show a
+cursor nobody asked for and preselect the middle card.

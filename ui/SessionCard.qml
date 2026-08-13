@@ -11,6 +11,7 @@ Item {
     property string subtitle: ""
     property string kind: "game"
     property bool selected: false
+    property bool pointerActive: true
     property real focusScale: 1.05
 
     // Layout unit: 1.0 means "designed for 1920x1080". See Picker.qml.
@@ -102,7 +103,8 @@ Item {
 
         anchors.fill: parent
         hoverEnabled: true
-        cursorShape: Qt.PointingHandCursor
+        // The cursor is hidden while the room is driving with keys or a pad.
+        cursorShape: card.pointerActive ? Qt.PointingHandCursor : Qt.BlankCursor
 
         onPositionChanged: function (mouse) {
             if (originX < 0) {
