@@ -298,29 +298,42 @@ blank_the_screen() {
     drop=$home/.config/systemd/user/plasma-powerdevil.service.d
 
     sudo install -d -o sddm -g sddm -m 755 "$wants" "$drop"
-    sudo ln -sf /usr/lib/systemd/user/plasma-powerdevil.service "$wants/plasma-powerdevil.service"
-    sudo chown -h sddm:sddm "$wants/plasma-powerdevil.service"
+
+    # What is wanted by the greeter's session is the *watch*, not the daemon.
+    # systemd starts plasma-powerdevil.service when the compositor's socket
+    # appears — the name matching is what pairs them — and re-arms itself when
+    # it goes away again, which is what the end of every greeter looks like.
+    # Nothing polls, nothing fails on purpose, and a machine where no Wayland
+    # greeter ever arrives simply never starts it.
+    sudo tee "$home/.config/systemd/user/plasma-powerdevil.path" >/dev/null <<EOF
+# Written by $ROOT/install.sh — see docs/mechanism.md.
+
+[Unit]
+Description=Watch for the greeter's compositor, and manage power while it is up
+
+[Path]
+PathExists=%t/wayland-0
+
+[Install]
+WantedBy=default.target
+EOF
+    sudo ln -sf "$home/.config/systemd/user/plasma-powerdevil.path" "$wants/plasma-powerdevil.path"
+    sudo chown -h sddm:sddm "$wants/plasma-powerdevil.path"
+    sudo chown sddm:sddm "$home/.config/systemd/user/plasma-powerdevil.path"
+
+    # Installs from before the path unit wanted the service itself, which meant
+    # starting it before there was a compositor to talk to.
+    sudo rm -f "$wants/plasma-powerdevil.service"
 
     sudo tee "$drop/greeter.conf" >/dev/null <<EOF
 # Written by $ROOT/install.sh — powerdevil in a session that is not Plasma's.
 
-[Unit]
-StartLimitIntervalSec=0
-
 [Service]
+# Plasma exports its session environment into the user manager and the greeter
+# does not. Without this powerdevil takes the xcb plugin, finds no display, and
+# aborts. Nothing else is needed: the path unit beside this one is what decides
+# when there is something to connect to.
 Environment=WAYLAND_DISPLAY=wayland-0
-# Wait for the compositor instead of dying on it. default.target is reached
-# before kwin has made the socket, and a service that aborts and is restarted
-# gets there in the end — but only by way of a crash the journal cannot tell
-# from a real one. Waiting says what is meant, and a machine where no wayland
-# greeter ever appears — the silent X11 fallback in development.md — gives up
-# after a minute and retries slowly instead of respawning twice a second.
-ExecStartPre=/bin/sh -c 'n=0; while [ ! -S "\$XDG_RUNTIME_DIR/wayland-0" ]; do [ \$n -ge 120 ] && exit 1; n=\$((n + 1)); sleep 0.5; done'
-# always, not on-failure: losing the compositor is how this ends every time a
-# session starts, and whether that arrives as a crash or as a clean exit is
-# powerdevil's business, not something to depend on.
-Restart=always
-RestartSec=5
 EOF
 
     # AutoSuspendAction is the same enumeration as the power button's, where 1
@@ -472,6 +485,8 @@ uninstall)
     sudo rm -f "$SDDM_CONF" "$KEEP_FILE"
     sudo rm -f "$(sddm_home)/.config/systemd/user/default.target.wants/cecd.service"
     sudo rm -f "$(sddm_home)/.config/systemd/user/default.target.wants/plasma-powerdevil.service"
+    sudo rm -f "$(sddm_home)/.config/systemd/user/default.target.wants/plasma-powerdevil.path"
+    sudo rm -f "$(sddm_home)/.config/systemd/user/plasma-powerdevil.path"
     sudo rm -rf "$(sddm_home)/.config/systemd/user/plasma-powerdevil.service.d"
     sudo rm -f "$(sddm_home)/.config/powerdevilrc"
     if [ -f "$PAM_FILE.steamos-session-picker.orig" ]; then

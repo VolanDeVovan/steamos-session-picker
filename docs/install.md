@@ -122,7 +122,8 @@ over to `install.sh`. Nothing is copied out of the checkout:
 group nopasswdlogin                              with one member
 ~sddm/.config/systemd/user/default.target.wants/cecd.service
                                                  the television remote, see input.md
-~sddm/.config/systemd/user/default.target.wants/plasma-powerdevil.service
+~sddm/.config/systemd/user/plasma-powerdevil.path
+~sddm/.config/systemd/user/default.target.wants/plasma-powerdevil.path
 ~sddm/.config/systemd/user/plasma-powerdevil.service.d/greeter.conf
 ~sddm/.config/powerdevilrc                       the screen goes off and the
                                                  machine sleeps at the picker,

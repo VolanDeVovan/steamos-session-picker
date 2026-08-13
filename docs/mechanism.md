@@ -202,8 +202,7 @@ here, both in `plasma-powerdevil.service.d/greeter.conf`:
 | | |
 |---|---|
 | `Environment=WAYLAND_DISPLAY=wayland-0` | Plasma exports its session environment into the user manager; the greeter does not. Without it powerdevil loads the xcb plugin, finds no display and aborts — `SIGABRT`, three times, then systemd gives up on it. |
-| `ExecStartPre=…` waiting for the socket | `default.target` is reached before kwin has made it. Crashing and being restarted also gets there, but only by way of a failure the journal cannot tell from a real one — and on a machine where no Wayland greeter ever appears (the silent X11 fallback in [development.md](development.md)) it respawns twice a second forever. The wait gives up after a minute instead. |
-| `Restart=always` | Losing the compositor is how this ends every time a session starts. Whether powerdevil reports that as a crash or a clean exit is its business, not something to depend on. |
+| a `.path` unit, wanted instead of the service | `default.target` is reached before kwin has made the socket, so what the session wants is the **watch**, not the daemon: `PathExists=%t/wayland-0` starts `plasma-powerdevil.service` when the compositor arrives and re-arms when it goes, which is what the end of every greeter looks like. Nothing polls, nothing fails on purpose, and a machine where no Wayland greeter ever appears — the silent X11 fallback in [development.md](development.md) — simply never starts it. Measured across a cold boot and a session round trip: `NRestarts=0`. |
 
 The profile in `~sddm/.config/powerdevilrc` names two numbers — screen off at
 five minutes, sleep at fifteen — and inherits everything else from SteamOS's
@@ -212,6 +211,14 @@ this: it is where `AutoSuspendAction` is read from rather than guessed (`1` is
 sleep, `0` is do nothing, the same enumeration the power button uses), and it
 sets `AutoSuspendIdleTimeoutSec=300` for a Deck on battery while leaving a
 machine on AC awake. A living room is not a handheld, so the picker sleeps.
+
+**None of this reaches the sessions it starts**, which is the question worth
+asking of anything hung off the greeter. It is all in user `sddm`'s session, and
+that session ends when a card is chosen: checked on a Steam Machine mid-game and
+in the VM the moment a session came up — `user@969.service` inactive, no process
+running as `sddm` at all, and the only `PowerDevil` inhibitor on the machine
+belonging to uid 1000. Game Mode, Desktop Mode and anything added later keep
+whatever power management they came with.
 
 Verified in the VM: the screen goes off on time, any key brings it back — and
 the key that wakes it is swallowed, so nothing is launched by someone reaching
