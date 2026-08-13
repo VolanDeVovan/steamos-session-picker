@@ -18,7 +18,12 @@ Item {
     property real u: 1
 
     signal activated
-    signal pointerEntered
+
+    // Where a hover event landed, in scene coordinates. Whether that counts as
+    // the pointer having moved is not this card's business to decide — see
+    // Picker.qml. It cannot be decided here: a card's own coordinates shift
+    // under a stationary cursor every time the shelf rescales.
+    signal hovered(var scenePos)
 
     implicitWidth: 340 * u
     implicitHeight: 430 * u
@@ -95,33 +100,13 @@ Item {
     }
 
     MouseArea {
-        id: pointer
-
-        // Where the pointer was first seen on this card. Selection follows the
-        // pointer, but only once it has really moved: on a television the cursor
-        // starts parked in the middle of the screen, and the compositor delivers
-        // a motion event for it, which would otherwise hand the selection to
-        // whichever card happens to sit under it before anyone touches anything.
-        property real originX: -1
-        property real originY: -1
-
         anchors.fill: parent
         hoverEnabled: true
         // The cursor is hidden while the room is driving with keys or a pad.
         cursorShape: card.pointerActive ? Qt.PointingHandCursor : Qt.BlankCursor
 
         onPositionChanged: function (mouse) {
-            if (originX < 0) {
-                originX = mouse.x;
-                originY = mouse.y;
-                return;
-            }
-            if (Math.abs(mouse.x - originX) + Math.abs(mouse.y - originY) > 8 * card.u)
-                card.pointerEntered();
-        }
-        onExited: {
-            originX = -1;
-            originY = -1;
+            card.hovered(mapToItem(null, mouse.x, mouse.y));
         }
         onClicked: card.activated()
     }

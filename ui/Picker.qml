@@ -34,6 +34,38 @@ Item {
     // and the cursor is hidden while it is not the pointer.
     property bool pointerActive: false
 
+    // Where the pointer was last seen to genuinely be, in scene coordinates.
+    // One baseline for the whole shelf, and scene coordinates rather than any
+    // card's own, because those two things are what make "did it move?"
+    // answerable at all:
+    //
+    //   * the compositor delivers a motion event for the cursor it parks in the
+    //     middle of the screen at startup, so the first event can never count;
+    //   * a card scales when the selection reaches it, and that moves the card
+    //     *under* a stationary cursor. In the card's own coordinates the pointer
+    //     has then "moved" — so with a cursor resting on a card, every d-pad
+    //     press handed the selection straight back to the card under it and the
+    //     shelf could not be driven at all. Observed on the machine.
+    //
+    // In scene coordinates a cursor nobody is touching stays exactly where it
+    // is, however much the shelf rearranges itself underneath.
+    property real pointerX: -1
+    property real pointerY: -1
+
+    // True when this hover event means the pointer really moved, which is also
+    // the moment the pointer takes the room back from the keys.
+    function notePointer(scenePos) {
+        if (pointerX < 0 || Math.abs(scenePos.x - pointerX) + Math.abs(scenePos.y - pointerY) > 8 * u) {
+            const moved = pointerX >= 0;
+            pointerX = scenePos.x;
+            pointerY = scenePos.y;
+            if (moved)
+                pointerActive = true;
+            return moved;
+        }
+        return false;
+    }
+
     signal activated(int index)
     signal cancelled
 
@@ -84,28 +116,16 @@ Item {
         }
     }
 
-    // Keeps the cursor hidden away from the cards as well. It reports real
-    // movement the same way a card does, because the compositor delivers a
-    // motion event for the cursor it parks on screen at startup.
+    // Keeps the cursor hidden between the cards as well, and reports movement
+    // there through the same baseline.
     MouseArea {
-        id: background
-
-        property real originX: -1
-        property real originY: -1
-
         anchors.fill: parent
         hoverEnabled: true
         acceptedButtons: Qt.NoButton
         cursorShape: root.pointerActive ? Qt.ArrowCursor : Qt.BlankCursor
 
         onPositionChanged: function (mouse) {
-            if (originX < 0) {
-                originX = mouse.x;
-                originY = mouse.y;
-                return;
-            }
-            if (Math.abs(mouse.x - originX) + Math.abs(mouse.y - originY) > 8 * root.u)
-                root.pointerActive = true;
+            root.notePointer(mapToItem(null, mouse.x, mouse.y));
         }
     }
 
@@ -272,9 +292,9 @@ Item {
                     focusScale: root.focusScale
                     pointerActive: root.pointerActive
 
-                    onPointerEntered: {
-                        root.pointerActive = true;
-                        root.currentIndex = index;
+                    onHovered: function (scenePos) {
+                        if (root.notePointer(scenePos))
+                            root.currentIndex = index;
                     }
                     onActivated: {
                         root.currentIndex = index;
