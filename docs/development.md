@@ -52,9 +52,8 @@ shapes and nothing else.
 
 ## Where the session list comes from
 
-`bin/compositor-session` builds it at session start, from
-`steamosctl get-valid-desktop-sessions` plus the desktop entry each name
-resolves to — `Name=` for the title, `Comment=` for the subtitle, falling back
+`bin/list-sessions` builds it at session start by reading the session
+directories, plus the desktop entry each name resolves to — `Name=` for the title, `Comment=` for the subtitle, falling back
 to the file name. Installing a new session therefore makes it appear in the
 picker on the next boot, with nothing edited.
 
@@ -62,6 +61,23 @@ Two entries are special. **Game Mode** is written by hand, because
 steamos-manager refuses any session whose name contains `gamescope` and so never
 lists it; it has its own verb instead. And the **picker itself** is filtered out,
 so it cannot offer to launch itself.
+
+It reads the filesystem rather than asking `steamos-manager`, which reads the
+same directories. Asking the daemon is a dependency that failed exactly where it
+mattered: at boot the picker starts within a second of the display manager, the
+answer came back empty, and the menu showed its built-in fallback list — offering
+a session the machine does not have. The filesystem is always ready.
+
+Sessions whose name contains `gamescope` are skipped, because
+`steamos-manager` refuses them and a menu should not offer what cannot be
+started. So is the picker's own entry.
+
+## The cursor starts where you left it
+
+After a choice is made it is written to
+`~/.local/state/steamos-session-picker/last-choice`, and the next time the menu
+opens the cursor is already on it. Power on, press once, gone. A cancellation is
+not a preference and is not recorded.
 
 Icons are guessed from the name — kodi/jellyfin/plex/mpv read as media,
 game/steam/retro as a gamepad, everything else as a desktop, which is what an
