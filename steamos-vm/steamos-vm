@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# Install and run Valve's SteamOS in a local virtual machine.
+#
+# Game Mode will not run in here — gamescope wants the Deck's AMD GPU — but the
+# display manager, session entries, PAM, greeter themes and the boot path all
+# do, and those are the parts you cannot test anywhere else.
+#
+# The sequence, once:
+#
+#   VM_RECOVERY_URL=… ./steamos-vm fetch    download Valve's recovery image
+#   ./steamos-vm prepare                    make it install unattended
+#   ./steamos-vm install                    wipe the disk and install SteamOS
+#   ./steamos-vm provision                  enable sshd and plant a key
+#   ./steamos-vm snapshot                   keep that state as the golden image
+#
+# and then, as often as you like:
+#
+#   ./steamos-vm start | view | ssh [cmd] | push <dir> | screenshot | reset | stop
+#
+# Settings live in steamos-vm.conf. Nothing outside this directory is written.
+set -Eeuo pipefail
+
+# Without this, a command failing under `set -e` ends the run silently — which
+# is how a stale pid file once turned into "install printed nothing at all".
+trap 'printf "steamos-vm: failed at %s line %s\n" "${BASH_SOURCE[0]}" "$LINENO" >&2' ERR
+
+SELF_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+export SELF_DIR
+
+. "$SELF_DIR/lib/common.sh"
+load_config
+. "$SELF_DIR/lib/image.sh"
+. "$SELF_DIR/lib/provision.sh"
+. "$SELF_DIR/lib/vm.sh"
+
+usage() {
+    cat >&2 <<EOF
+usage: steamos-vm <command> [args]
+
+building it, in order
+  fetch             download and decompress Valve's recovery image
+  prepare           turn that image into an unattended installer
+  install           wipe the disk and install SteamOS; the guest powers off when done
+  provision         enable sshd, plant a key, extract the kernel — with the VM off
+  snapshot          keep the current disk as the state that reset returns to
+
+using it
+  start             boot the machine and wait for ssh
+  view              open its screen in a VNC viewer, with a working mouse and keyboard
+  stop              kill it
+  ssh [command]     shell in, or run one command
+  push <dir> [dest] copy a directory into the guest
+  screenshot [path] write what is on the screen to a png
+  key <name>...     type at the guest's own keyboard — key right right ret
+  reset             back to the golden image, discarding everything since
+  doctor            check this host has what the tool needs
+
+Settings: steamos-vm.conf, or the environment — VM_RAM=16G steamos-vm start
+EOF
+}
+
+command=${1:-}
+[ $# -gt 0 ] && shift || true
+
+case "$command" in
+fetch) cmd_fetch "$@" ;;
+prepare) cmd_prepare "$@" ;;
+install) cmd_install "$@" ;;
+provision) cmd_provision "$@" ;;
+snapshot) cmd_snapshot "$@" ;;
+start) cmd_start "$@" ;;
+view) cmd_view "$@" ;;
+stop) cmd_stop "$@" ;;
+ssh) cmd_ssh "$@" ;;
+push) cmd_push "$@" ;;
+screenshot) cmd_screenshot "$@" ;;
+key) cmd_key "$@" ;;
+reset) cmd_reset "$@" ;;
+doctor) cmd_doctor "$@" ;;
+help | -h | --help)
+    usage
+    exit 0
+    ;;
+"")
+    usage
+    exit 2
+    ;;
+*)
+    printf 'steamos-vm: no such command: %s\n\n' "$command" >&2
+    usage
+    exit 2
+    ;;
+esac

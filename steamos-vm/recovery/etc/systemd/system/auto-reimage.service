@@ -1,0 +1,26 @@
+[Unit]
+Description=Unattended SteamOS reimage (steamos-vm)
+# Not `After=multi-user.target`. Ordering a unit after the very target that
+# pulls it in is a contradiction, and systemd resolves it by dropping one edge
+# or the other — which showed up as an install that reimaged on two runs out of
+# four and booted to the recovery desktop on the others.
+After=local-fs.target
+# The tools live on the recovery image's own home partition, so this has to wait
+# for it: ConditionPathExists is checked once, at start, and a unit whose
+# condition fails is skipped silently rather than retried.
+RequiresMountsFor=/home
+ConditionPathExists=/home/deck/tools/repair_device.sh
+
+[Service]
+Type=oneshot
+# Valve's own script supports both, which is presumably how machines are imaged
+# in the factory. POWEROFF is what makes the install self-announcing: the guest
+# stopping is the signal that it finished.
+Environment=NOPROMPT=1
+Environment=POWEROFF=1
+ExecStart=/home/deck/tools/repair_device.sh all
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

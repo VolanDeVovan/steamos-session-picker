@@ -1,0 +1,10 @@
+# The account has no password on a fresh SteamOS image, so sudo would prompt for
+# one that does not exist and every remote command would hang rather than fail.
+#
+# The name has to sort last. sudo applies the files in /etc/sudoers.d in lexical
+# order and the last matching rule wins, so a "99-" prefix loses to SteamOS's own
+# "wheel" file — digits sort before letters — and the prompt comes back.
+#
+# The user is written out because sudoers has no variable substitution: if you
+# change VM_USER in steamos-vm.conf, change it here too.
+deck ALL=(ALL) NOPASSWD: ALL
