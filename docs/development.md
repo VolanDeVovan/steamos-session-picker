@@ -87,6 +87,20 @@ nothing private, and that quoting is our problem — hence `json_escape` in
 Without the argument the UI falls back to `ui/sessions.js`, which is what keeps
 `just run` working on a machine that has no `steamosctl` at all.
 
+### Two qml runtimes, and only one of them works
+
+SteamOS ships both, and `/usr/bin/qml` is **qt5-declarative's**. It cannot load
+this UI at all — versionless imports are a Qt 6 feature:
+
+```
+Picker.qml: Library import requires a version
+```
+
+The Qt 6 runtime is `/usr/lib/qt6/bin/qml`, with a `qml6` alias.
+`bin/qml-runtime` resolves it so both halves of the project agree, and
+`install.sh` reports which one it found. On the first hardware run this was a
+black screen with a working cursor: kwin was up, the UI never started.
+
 ### What kwin does to its session
 
 Two behaviours shaped the design above. Both were observed on kwin's virtual
@@ -108,6 +122,26 @@ being a script, `bin/compositor-session`, passed as a single argument.
 never reaches the process that started kwin, so it cannot be read from there.
 Hence the capture living one level down, inside the session script, where `qml`
 is a direct child — and the answer leaving through a file.
+
+**kwin does not stop when its session exits.** It keeps holding the screen for
+as long as it is left alone, so something has to signal it. It stops on SIGTERM
+immediately.
+
+**And the session is not kwin's child.** KWin 6 starts it through the systemd
+user manager, so `$PPID` inside the session script is systemd. Signalling the
+parent therefore cannot work — an early attempt at it, run where the parent was
+a login shell rather than a compositor, killed an unrelated session. The
+compositor is found instead by the command line only it has:
+
+```sh
+pgrep -f "kwin_wayland .*compositor-session"
+```
+
+### Everything above was a black screen
+
+Each of those faults looks identical from the sofa: the picker's own log,
+written before the output is filtered, is what separated them. It is worth
+keeping for that reason alone.
 
 ### Qt logging goes to journald
 
