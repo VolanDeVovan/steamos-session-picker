@@ -195,6 +195,18 @@ EOF
 keep_remote_alive() {
     [ -f /usr/lib/systemd/user/cecd.service ] || return 0
 
+    # Staying alive is not enough on its own. SteamOS's own udev rules make
+    # /dev/cec0 root:video and tag it `uaccess`, so the second thing granting
+    # access is an ACL that follows whoever holds the seat — and that is now the
+    # greeter, running as sddm. A cecd deliberately living outside any session
+    # is therefore left with "EACCES: Permission denied" and publishes nothing.
+    #
+    # Group membership is the part that does not depend on who holds the seat,
+    # and `video` is the group SteamOS already puts CEC devices in. It escalates
+    # nothing here: this account is in `wheel`.
+    id -nG "$user" | tr ' ' '\n' | grep -qx video ||
+        sudo gpasswd -a "$user" video >/dev/null
+
     sudo loginctl enable-linger "$user"
     home=$(getent passwd "$user" | cut -d: -f6)
     sudo -u "$user" mkdir -p "$home/.config/systemd/user/default.target.wants"
@@ -322,6 +334,7 @@ uninstall)
     home=$(getent passwd "$user" | cut -d: -f6)
     rm -f "$home/.config/systemd/user/default.target.wants/cecd.service"
     sudo loginctl disable-linger "$user" 2>/dev/null || true
+    sudo gpasswd -d "$user" video >/dev/null 2>&1 || true
     if [ -f "$PAM_FILE.steamos-session-picker.orig" ]; then
         sudo mv "$PAM_FILE.steamos-session-picker.orig" "$PAM_FILE"
     else

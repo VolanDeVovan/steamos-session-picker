@@ -85,8 +85,33 @@ ln -sf /usr/lib/systemd/user/cecd.service \
 
 Verified on the machine by stopping `graphical-session.target`, and again in the
 VM by restarting SDDM out from under it: `cecd` stays `active` and both of its
-input devices stay in `/proc/bus/input/devices`. `install.sh` does those two
-lines, and only if `cecd.service` exists — the Deck has no CEC hardware.
+input devices stay in `/proc/bus/input/devices`.
+
+**And it needs to be allowed to open the device.** Staying alive turned out not
+to be enough, and only the machine could say so — the VM has no `/dev/cec0`, so
+there was nothing there to be refused. SteamOS grants access to it two ways, in
+its own udev rules:
+
+```
+50-udev-default.rules:  SUBSYSTEM=="cec", GROUP="video"
+60-cec-uaccess.rules:   SUBSYSTEM=="cec", TAG+="uaccess"
+```
+
+`uaccess` is an ACL that follows **whoever holds the seat**, and that is now the
+greeter, running as `sddm`. A cecd deliberately living outside every session is
+therefore refused:
+
+```
+WARN cecd: Unable to get initial device list: EACCES: Permission denied
+```
+
+with the daemon `active` and not one input device published. The half that does
+not depend on who holds the seat is the group, so the account joins `video` —
+the group SteamOS's own rule already puts CEC devices in. It escalates nothing:
+that account is in `wheel`.
+
+`install.sh` does all three, and only if `cecd.service` exists — the Deck has no
+CEC hardware.
 
 **The greeter's compositor picks such a device up.** This was the part left
 unproven, because it needs a finger on a remote. It does not, quite: what
@@ -95,10 +120,14 @@ above, which is the same experiment with the same answer. cecd's device is a
 uinput keyboard, created by root, appearing after the greeter did, and that
 drives the picker.
 
-What remains untested is CEC itself end to end, which needs a television. The
-VM has a virtual CEC adapter (`vivid`) and cecd attaches to it and publishes its
-uinput keyboards, but the two virtual adapters are not on a shared bus, so no
-message can be made to arrive. Everything downstream of that arrival is proven.
+On the machine, with the picker installed and the greeter up, that leaves cecd
+holding `/dev/cec0` and publishing its keyboard while no session exists at all.
+
+What remains untested is CEC itself end to end, which needs a button pressed on
+a television. The VM has a virtual CEC adapter (`vivid`) and cecd attaches to it
+and publishes its uinput keyboards, but the two virtual adapters are not on a
+shared bus, so no message can be made to arrive. Everything downstream of that
+arrival is proven.
 
 ## Steam takes the controller away — verified 2026-08-12
 
