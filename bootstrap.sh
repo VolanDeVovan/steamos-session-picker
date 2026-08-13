@@ -7,8 +7,12 @@
 # survives SteamOS updates — and hands over to install.sh. Running it again
 # updates an existing checkout instead of failing.
 #
-# It registers the session and stops there. Nothing about how the machine boots
-# changes until you run `install.sh enable` yourself.
+# One run does the whole thing: clone, register, and make the picker the session
+# the machine boots into. That is safe to do in one go because the entry point
+# gives up and returns to Game Mode if the picker fails to start three times in
+# a boot — see bin/steamos-session-picker.
+#
+# To undo:  /opt/steamos-session-picker/install.sh disable
 set -eu
 
 REPO="${PICKER_REPO:-https://github.com/VolanDeVovan/steamos-session-picker.git}"
@@ -36,4 +40,5 @@ else
     git clone --branch "$BRANCH" "$REPO" "$DEST"
 fi
 
-exec "$DEST/install.sh" install
+"$DEST/install.sh" install
+exec "$DEST/install.sh" enable

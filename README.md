@@ -77,9 +77,17 @@ On the machine:
 curl -fsSL https://raw.githubusercontent.com/VolanDeVovan/steamos-session-picker/main/bootstrap.sh | sh
 ```
 
-That clones the repository into `/opt/steamos-session-picker` and registers the
-session. **It changes nothing about how the machine boots.** Enabling it is a
-separate, deliberate step:
+That is the whole installation: it clones the repository into
+`/opt/steamos-session-picker`, registers the session, and makes it the one the
+machine boots into. Reboot and you are in the picker.
+
+Doing it in one go is safe because SDDM on SteamOS runs with `Relogin=true`,
+which would turn a picker that cannot start into an endless relogin loop — so
+the entry point counts runs that produced nothing and, after three in a boot,
+puts the machine back into Game Mode by itself.
+
+The steps are still separate underneath, which is what you want when changing
+anything:
 
 ```sh
 cd /opt/steamos-session-picker
@@ -87,12 +95,8 @@ cd /opt/steamos-session-picker
 ./install.sh enable    # make it the session the machine boots into
 ./install.sh disable   # back to Game Mode
 ./install.sh update    # git pull, then re-register
+./install.sh uninstall # remove every trace
 ```
-
-The separation is not ceremony. SDDM on SteamOS runs with `Relogin=true`, so a
-default session that fails to start is an endless relogin loop; `disable` is the
-way out, and it can be run over ssh from another computer if the screen is
-stuck.
 
 Nothing is compiled, no packages are installed, and the read-only rootfs is
 never touched: SteamOS already ships `qml` and `kwin_wayland`, which is the

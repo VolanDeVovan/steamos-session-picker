@@ -35,6 +35,26 @@ run() {
     exec "$@"
 }
 
+# SDDM here runs with Relogin=true, so a picker that cannot start comes straight
+# back, forever. A run that produced no answer at all — not even a cancellation,
+# which arrives as "none" — is counted, and after three in one boot the machine
+# is put back into Game Mode instead of being left looping. /run is emptied at
+# boot, so the count cannot leak into the next one.
+FAILURES="${XDG_RUNTIME_DIR:-/tmp}/steamos-session-picker.failures"
+if [ -n "$choice" ]; then
+    rm -f "$FAILURES"
+else
+    failures=$(($(cat "$FAILURES" 2>/dev/null || echo 0) + 1))
+    printf '%s\n' "$failures" >"$FAILURES"
+    if [ "$failures" -ge 3 ]; then
+        printf 'picker: produced nothing %s times this boot, returning to Game Mode\n' \
+            "$failures" >&2
+        rm -f "$FAILURES"
+        steamosctl set-default-login-mode game || true
+        run steamosctl switch-to-game-mode
+    fi
+fi
+
 case "$choice" in
 game-mode)
     run steamosctl switch-to-game-mode
@@ -52,8 +72,9 @@ desktop:*)
     run steamosctl switch-to-desktop-mode "$session"
     ;;
 none | "")
-    # Cancelled, or the picker died before choosing. With Relogin=true SDDM
-    # brings it straight back, which is the intended behaviour.
+    # Cancelled, or nothing was produced. SDDM brings the picker straight back,
+    # which is what cancelling should do; the failsafe above catches the case
+    # where that would repeat forever.
     exit 0
     ;;
 *)
