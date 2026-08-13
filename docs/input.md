@@ -72,46 +72,42 @@ Three things had to be established, and all three now are.
 wants a session bus for `com.steampowered.CecDaemon1` and exits with an I/O
 error without one.
 
-**It does not need to be in the greeter's session.** What it publishes is a
-uinput keyboard, and uinput devices are global — they belong to no session at
-all. So the daemon only has to *still be running*, which is linger plus a want
-on `default.target`:
-
-```sh
-loginctl enable-linger deck
-ln -sf /usr/lib/systemd/user/cecd.service \
-       ~/.config/systemd/user/default.target.wants/cecd.service
-```
-
-Verified on the machine by stopping `graphical-session.target`, and again in the
-VM by restarting SDDM out from under it: `cecd` stays `active` and both of its
-input devices stay in `/proc/bus/input/devices`.
-
-**And it needs to be allowed to open the device.** Staying alive turned out not
-to be enough, and only the machine could say so — the VM has no `/dev/cec0`, so
-there was nothing there to be refused. SteamOS grants access to it two ways, in
-its own udev rules:
-
-```
-50-udev-default.rules:  SUBSYSTEM=="cec", GROUP="video"
-60-cec-uaccess.rules:   SUBSYSTEM=="cec", TAG+="uaccess"
-```
-
-`uaccess` is an ACL that follows **whoever holds the seat**, and that is now the
-greeter, running as `sddm`. A cecd deliberately living outside every session is
-therefore refused:
+**It does not want to be dragged out of a session at all.** The obvious move —
+keep the daemon alive past the session that started it, with linger and a want
+on `default.target` — works in the sense that the process survives, and then
+fails on the machine for a reason a VM cannot show, because a VM has no
+`/dev/cec0` to be refused:
 
 ```
 WARN cecd: Unable to get initial device list: EACCES: Permission denied
+WARN cecd::device: Failed to open uinput device: Permission denied (os error 13)
 ```
 
-with the daemon `active` and not one input device published. The half that does
-not depend on who holds the seat is the group, so the account joins `video` —
-the group SteamOS's own rule already puts CEC devices in. It escalates nothing:
-that account is in `wheel`.
+Both devices it needs are handed out by udev's `uaccess` tag — including
+`/dev/uinput`, for which Valve ships `60-cecd-uinput.rules` saying exactly that,
+and nothing else. `uaccess` is an ACL that follows **whoever holds the seat**,
+so a daemon deliberately living outside every session is refused by both, while
+reporting itself `active` and publishing nothing.
 
-`install.sh` does all three, and only if `cecd.service` exists — the Deck has no
-CEC hardware.
+Whoever holds the seat while the picker is up is the greeter, as user `sddm`.
+So the answer is the one the OS already implies: **the greeter gets its own
+cecd**, in its own session, where the ACL already points.
+
+```sh
+ln -sf /usr/lib/systemd/user/cecd.service \
+       ~sddm/.config/systemd/user/default.target.wants/cecd.service
+```
+
+One symlink, no linger, no group, no udev rule, no permission that was not
+already granted. Each session has an instance while it holds the seat: Valve's
+in the user's, this one in the greeter's.
+
+Verified on a Steam Machine, at the picker, with no user session in existence:
+
+```
+INFO cecd::system: Found cec device at /dev/cec0
+N: Name="cecd cros-ec-cec"   H: Handlers=kbd event21
+```
 
 **The greeter's compositor picks such a device up.** This was the part left
 unproven, because it needs a finger on a remote. It does not, quite: what
@@ -119,9 +115,6 @@ matters is the *kind* of device, and one can be conjured — see the controller
 above, which is the same experiment with the same answer. cecd's device is a
 uinput keyboard, created by root, appearing after the greeter did, and that
 drives the picker.
-
-On the machine, with the picker installed and the greeter up, that leaves cecd
-holding `/dev/cec0` and publishing its keyboard while no session exists at all.
 
 What remains untested is CEC itself end to end, which needs a button pressed on
 a television. The VM has a virtual CEC adapter (`vivid`) and cecd attaches to it

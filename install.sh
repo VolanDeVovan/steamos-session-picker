@@ -182,39 +182,35 @@ $PAM_FILE
 EOF
 }
 
-# The television remote. Valve runs cecd as a *user* unit wanted by
-# graphical-session.target, so it dies with the session and there is nothing
-# emitting key codes while the login screen is up. It cannot simply be moved to
-# a system unit — it wants a session bus for com.steampowered.CecDaemon1 and
-# exits without one, measured on the machine.
+# The television remote. cecd turns CEC into a uinput keyboard, and Valve runs
+# it as a *user* unit wanted by graphical-session.target — so it exists inside a
+# session and nowhere else, which is exactly wrong for a login screen.
 #
-# What it publishes is a plain uinput keyboard, and those are global: the
-# greeter's compositor picks one up even though it belongs to no session. So the
-# daemon does not need to be in the greeter's session, it only needs to outlive
-# the one it was started from — which is linger plus a want on default.target.
+# The temptation is to drag it out of sessions, with a system unit or with
+# linger. Both fail, and the second one fails twice: cecd wants a session bus
+# for com.steampowered.CecDaemon1 and exits without one, and the two devices it
+# needs — /dev/cec0 and /dev/uinput — are handed out by udev's `uaccess` tag,
+# which is an ACL following whoever holds the seat. A daemon deliberately
+# outside every session is refused by both, "EACCES: Permission denied",
+# active and publishing nothing.
+#
+# Whoever holds the seat while the picker is up is the greeter, as user sddm.
+# So the daemon does not want to be dragged anywhere: it wants an instance in
+# the greeter's own session, where the ACL already points. Then each session has
+# one — Valve's in the user's, this one in the greeter's — and neither needs a
+# permission that was not already granted.
+#
+# Verified on a Steam Machine: `cecd cros-ec-cec` appears as an ordinary
+# keyboard, on a machine with no user session at all.
 keep_remote_alive() {
     [ -f /usr/lib/systemd/user/cecd.service ] || return 0
 
-    # Staying alive is not enough on its own. SteamOS's own udev rules make
-    # /dev/cec0 root:video and tag it `uaccess`, so the second thing granting
-    # access is an ACL that follows whoever holds the seat — and that is now the
-    # greeter, running as sddm. A cecd deliberately living outside any session
-    # is therefore left with "EACCES: Permission denied" and publishes nothing.
-    #
-    # Group membership is the part that does not depend on who holds the seat,
-    # and `video` is the group SteamOS already puts CEC devices in. It escalates
-    # nothing here: this account is in `wheel`.
-    id -nG "$user" | tr ' ' '\n' | grep -qx video ||
-        sudo gpasswd -a "$user" video >/dev/null
-
-    sudo loginctl enable-linger "$user"
-    home=$(getent passwd "$user" | cut -d: -f6)
-    sudo -u "$user" mkdir -p "$home/.config/systemd/user/default.target.wants"
-    sudo -u "$user" ln -sf /usr/lib/systemd/user/cecd.service \
-        "$home/.config/systemd/user/default.target.wants/cecd.service"
-    sudo -u "$user" XDG_RUNTIME_DIR="/run/user/$(id -u "$user")" \
-        systemctl --user daemon-reload 2>/dev/null || true
-    printf 'the remote now keeps working while the picker is on screen\n'
+    # sddm's home, not ~/.config: this unit belongs to the greeter's account.
+    wants=$(getent passwd sddm | cut -d: -f6)/.config/systemd/user/default.target.wants
+    sudo install -d -o sddm -g sddm -m 755 "$wants"
+    sudo ln -sf /usr/lib/systemd/user/cecd.service "$wants/cecd.service"
+    sudo chown -h sddm:sddm "$wants/cecd.service"
+    printf 'the remote now works while the picker is on screen\n'
 }
 
 enable_boot() {
@@ -331,10 +327,7 @@ disable)
 uninstall)
     require_sudo
     sudo rm -f "$SDDM_CONF" "$KEEP_FILE"
-    home=$(getent passwd "$user" | cut -d: -f6)
-    rm -f "$home/.config/systemd/user/default.target.wants/cecd.service"
-    sudo loginctl disable-linger "$user" 2>/dev/null || true
-    sudo gpasswd -d "$user" video >/dev/null 2>&1 || true
+    sudo rm -f "$(getent passwd sddm | cut -d: -f6)/.config/systemd/user/default.target.wants/cecd.service"
     if [ -f "$PAM_FILE.steamos-session-picker.orig" ]; then
         sudo mv "$PAM_FILE.steamos-session-picker.orig" "$PAM_FILE"
     else

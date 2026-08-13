@@ -120,7 +120,7 @@ over to `install.sh`. Nothing is copied out of the checkout:
 /etc/atomic-update.conf.d/steamos-session-picker.conf
                                                  which keeps that line across an update
 group nopasswdlogin                              with one member
-~/.config/systemd/user/default.target.wants/cecd.service
+~sddm/.config/systemd/user/default.target.wants/cecd.service
                                                  the television remote, see input.md
 ```
 
