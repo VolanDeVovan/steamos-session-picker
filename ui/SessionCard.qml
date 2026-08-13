@@ -90,14 +90,33 @@ Item {
     }
 
     MouseArea {
+        id: pointer
+
+        // Where the pointer was first seen on this card. Selection follows the
+        // pointer, but only once it has really moved: on a television the cursor
+        // starts parked in the middle of the screen, and the compositor delivers
+        // a motion event for it, which would otherwise hand the selection to
+        // whichever card happens to sit under it before anyone touches anything.
+        property real originX: -1
+        property real originY: -1
+
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        // Selection follows the pointer only once it has actually moved. At
-        // startup the cursor sits wherever the compositor parked it — the
-        // middle of a television — and onEntered would hand focus to whatever
-        // card happens to be under it.
-        onPositionChanged: card.pointerEntered()
+
+        onPositionChanged: function (mouse) {
+            if (originX < 0) {
+                originX = mouse.x;
+                originY = mouse.y;
+                return;
+            }
+            if (Math.abs(mouse.x - originX) + Math.abs(mouse.y - originY) > 8 * card.u)
+                card.pointerEntered();
+        }
+        onExited: {
+            originX = -1;
+            originY = -1;
+        }
         onClicked: card.activated()
     }
 }
