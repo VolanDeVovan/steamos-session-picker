@@ -91,12 +91,17 @@ anything:
 
 ```sh
 cd /opt/steamos-session-picker
-./install.sh try       # start the picker once; a reboot puts things back
-./install.sh enable    # make it the session the machine boots into
-./install.sh disable   # back to Game Mode
-./install.sh update    # git pull, then re-register
-./install.sh uninstall # remove every trace
+./install.sh            # the whole thing, same as the one-liner
+./install.sh register   # register only, changing no defaults
+./install.sh try        # start the picker once; a reboot puts things back
+./install.sh enable     # make it the session the machine boots into
+./install.sh disable    # back to Game Mode
+./install.sh update     # git pull, then re-register
+./install.sh uninstall  # remove every trace
 ```
+
+Nothing here reboots; the picker appears at the next boot, or immediately via
+Steam's "Switch to Desktop", or with `./install.sh try`.
 
 Nothing is compiled, no packages are installed, and the read-only rootfs is
 never touched: SteamOS already ships `qml` and `kwin_wayland`, which is the

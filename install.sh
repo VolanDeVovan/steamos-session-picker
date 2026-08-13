@@ -8,11 +8,12 @@
 #   /var/lib/steamos-session-picker/  the session entry, and the overlay's workdir
 #   /etc/systemd/system/usr-local-share.mount
 #
-# Deliberately split into steps. Registering is harmless and reversible; making
-# the picker the default login session is not, because SDDM here runs with
-# Relogin=true — a session that fails to start becomes an endless relogin loop.
+# A bare run does everything, which is safe because the entry point returns the
+# machine to Game Mode if the picker fails to start three times in a boot. The
+# steps stay separately available for when something is being changed.
 #
-#   ./install.sh install     register the session (changes no defaults)
+#   ./install.sh             register it and boot into it — the whole thing
+#   ./install.sh register    register only, changing no defaults
 #   ./install.sh try         start the picker once, reverts on reboot
 #   ./install.sh enable      make it the session the machine boots into
 #   ./install.sh disable     back to Game Mode — the way out of a relogin loop
@@ -94,13 +95,18 @@ EOF
 
 require_registered() {
     if ! steamosctl get-valid-desktop-sessions 2>/dev/null | grep -q "$SESSION"; then
-        printf 'install: %s is not registered. Run `%s install` first.\n' "$SESSION" "$0" >&2
+        printf 'install: %s is not registered. Run `%s register` first.\n' "$SESSION" "$0" >&2
         exit 1
     fi
 }
 
-case "${1:-install}" in
-install)
+case "${1:-all}" in
+all)
+    register
+    printf 'registered from %s\n' "$ROOT"
+    "$0" enable
+    ;;
+register)
     register
     printf 'registered from %s\n' "$ROOT"
     printf 'sessions now offered: %s\n' \
@@ -113,7 +119,7 @@ update)
     # Re-exec rather than carrying on: the pull just rewrote this very file, and
     # a running shell keeps reading its script from the changed offset. Observed
     # doing exactly that — the old register() ran after a new one was pulled in.
-    exec "$ROOT/install.sh" install
+    exec "$ROOT/install.sh" register
     ;;
 try)
     require_registered
@@ -141,7 +147,7 @@ uninstall)
     printf 'unregistered. The checkout at %s is still there; remove it if you want it gone.\n' "$ROOT"
     ;;
 *)
-    printf 'usage: %s {install|update|try|enable|disable|uninstall}\n' "$0" >&2
+    printf 'usage: %s [register|try|enable|disable|update|uninstall]\n' "$0" >&2
     exit 2
     ;;
 esac

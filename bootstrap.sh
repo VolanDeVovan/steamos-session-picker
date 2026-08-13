@@ -40,5 +40,4 @@ else
     git clone --branch "$BRANCH" "$REPO" "$DEST"
 fi
 
-"$DEST/install.sh" install
-exec "$DEST/install.sh" enable
+exec "$DEST/install.sh"
