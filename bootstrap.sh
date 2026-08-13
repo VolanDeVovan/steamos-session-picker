@@ -7,10 +7,11 @@
 # survives SteamOS updates — and hands over to install.sh. Running it again
 # updates an existing checkout instead of failing.
 #
-# One run does the whole thing: clone, register, and make the picker the session
-# the machine boots into. That is safe to do in one go because the entry point
-# gives up and returns to Game Mode if the picker fails to start three times in
-# a boot — see bin/steamos-session-picker.
+# One run does the whole thing: clone, allow the account to log in without a
+# password, and make the picker SDDM's login screen. That is safe to do in one
+# go because nothing here can trap the machine: a greeter that fails to load
+# falls back to a stock one, and a session that fails to start returns to the
+# greeter — neither is a loop.
 #
 # To undo:  /opt/steamos-session-picker/install.sh disable
 # To set up without changing what boots:  PICKER_ARGS=--no-enable

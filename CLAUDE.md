@@ -9,12 +9,17 @@ Game Mode, the machine lands in a 10-foot menu and the user picks where to go �
 Game Mode, Desktop, or a media session. It is driven from a controller, a TV
 remote, a keyboard or a mouse.
 
+It is **SDDM's greeter with a theme**, not a session that runs before the real
+one: SDDM already owns the session list, starts sessions, and is what a finished
+session returns to. Autologin is off and the passwordless login is a PAM rule
+(`nopasswdlogin`), not a bypass.
+
 The picker is session-agnostic: entries are data, not code. Kodi is the first
 media entry wired up, but nothing in the picker is specific to it.
 
 Target: a Valve Steam Machine on stock SteamOS; the same mechanism applies to a
-Steam Deck. Development happens on any Linux with a Wayland session — `qml` and
-`kwin_wayland` come from the flake, never from the host system.
+Steam Deck. Development happens on any Linux with a Wayland session — `qml`
+comes from the flake, never from the host system.
 
 ## Design
 
@@ -37,10 +42,11 @@ visual language:
 
 | Directory | What lives there |
 |---|---|
-| `ui/` | The QML picker. The session list is discovered on the machine and handed in, so `sessions.js` is only the fallback used when the UI runs on its own; `theme.js` holds the palette. |
-| `bin/` | The two shell halves that run on the target: the session entry point and the compositor's session command. Everything allowed to touch the system lives here. |
-| `dev/` | Rendered screenshots under `dev/shots/`, for reviewing layout. Never shipped. |
+| `ui/` | The picker itself, knowing nothing about SDDM. `Picker.qml` is a plain Item handed a list and emitting an index; `entries.js` turns desktop entries into cards; `theme.js` holds the palette. |
+| `themes/` | The SDDM theme: `Main.qml` wires SDDM's `sessionModel`, `userModel` and `sddm.login()` to `ui/Picker.qml`. This is the whole boot path — there is no shell in it. |
+| `dev/` | Never shipped: `Preview.qml` puts the picker in a window, `sessions.js` is the fixture it shows, `shots/` is the rendered review set. |
 | `docs/` | How the SteamOS side works, what input actually arrives, and development notes. |
+| `steamos-vm/` | A SteamOS virtual machine, for the parts that can only be tested on the OS itself. Self-contained: it reads nothing outside its own directory. |
 
 `bootstrap.sh` and `install.sh` are the only things that touch a real machine,
 and they run there, not from here: the repository is cloned into `/opt` on the
@@ -55,14 +61,16 @@ Tasks live in the `justfile`; they expect the dev shell on PATH, which
 nix develop
 just            # list recipes
 just run        # live window: keyboard, pointer, controller
-just check      # shell syntax and layout, no display needed
+just check      # shell syntax, layout, theme — no display needed
 just shots      # re-render the layout review set into dev/shots/
 ```
 
-**Nothing here starts a compositor.** The picker's session is only ever run on
-the target: an attempt to nest one locally took down the developer's own
-session. Layout is checked by rendering to PNG, the rest on the machine. Why
-that split is not laziness is in [docs/development.md](docs/development.md).
+**Nothing here starts a compositor or a greeter.** There is no greeter on a
+development machine, and an attempt to nest a compositor locally took down the
+developer's own session. Layout is checked by rendering to PNG; the greeter,
+PAM and the boot path in `steamos-vm/`, which can be driven without a person in
+front of it (`./steamos-vm key right ret`, `screenshot`). Why that split is not
+laziness is in [docs/development.md](docs/development.md).
 
 ## Conventions
 
@@ -80,4 +88,4 @@ that split is not laziness is in [docs/development.md](docs/development.md).
 | How SteamOS decides which session to start, and the pitfalls | [docs/mechanism.md](docs/mechanism.md) |
 | Installing on an immutable OS: what persists, the update keep list, how Tailscale and Decky do it | [docs/install.md](docs/install.md) |
 | Controller, TV remote, keyboard, mouse — what the picker receives | [docs/input.md](docs/input.md) |
-| Choice protocol, dev workflow, screenshots, scaling, HDR | [docs/development.md](docs/development.md) |
+| The two faces, dev workflow, screenshots, scaling, HDR | [docs/development.md](docs/development.md) |

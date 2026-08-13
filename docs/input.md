@@ -3,6 +3,10 @@
 The picker handles **keys and pointer**, nothing else. That is not a shortcut —
 it is what the target hardware sends.
 
+Since the picker became SDDM's greeter there is one new question behind all of
+it: the greeter runs as user `sddm`, in a logind session of class `greeter`, not
+as `deck`. Every device below has to reach *that*.
+
 ## On the Steam Machine
 
 **Controller.** The puck hands the system real USB-HID devices, four slots of
@@ -14,25 +18,87 @@ N: Name="Valve Software Steam Controller Puck Mouse"      H: Handlers=event3 mou
 ```
 
 This is lizard mode, implemented in the dongle itself. While Steam is not
-running — and in a login picker it is by definition not running — the controller
+running — and at a login screen it is by definition not running — the controller
 is arrow keys, Enter and Esc, plus a mouse driven from the trackpad. No SDL, no
 gamepad API, no compositor plugin.
 
 **TV remote.** Fremont exposes `/dev/cec0` through `cros-ec-cec`, and Valve's
-own `cecd -e` turns CEC into a uinput device emitting ordinary key codes. So the
-remote arrives as a keyboard as well.
-
-`cecd.service` is a **user** unit. It runs inside the `deck` session, which the
-picker is — so the remote works there for free. It would not work in an SDDM
-greeter, which runs as user `sddm`.
+own `cecd -e` turns CEC into a **uinput device emitting ordinary key codes**. So
+the remote arrives as a keyboard as well.
 
 **Keyboard and mouse.** Plain USB, nothing special.
+
+### The puck against the greeter, without a puck
+
+Being two HID devices is exactly what makes the controller reproducible without
+one. A uinput keyboard and a uinput mouse, published together under the puck's
+own names and IDs (`28de:1304`) by root, *after* the greeter was already on
+screen — which is also what a controller plugged in after boot looks like:
+
+| What was sent | What the picker did |
+|---|---|
+| two `KEY_RIGHT` on the keyboard device | selection moved two cards, no cursor |
+| relative motion onto the first card | selection followed the pointer to it |
+
+Both in `steamos-vm/`. The second is the interesting one: it is the trackpad
+half, and it proves the "whichever input was used last wins" rule holds in the
+greeter and not only in a window.
+
+What this does **not** prove is a real puck on a real Steam Machine at this
+greeter — the radio, lizard mode and udev's view of a genuine USB device are all
+outside a VM. It proves that the greeter treats such devices exactly as the old
+picker session did, which was the only thing the move to a greeter put at risk.
+
+A pad with **no** lizard mode is a different matter and would not work: it is a
+joystick, not a keyboard, and this picker reads keys. Nothing on a Steam Machine
+or a Deck is in that category.
 
 ## On the Steam Deck
 
 The `hid-steam` kernel driver does the same job: D-pad to arrows, A to Enter,
 B to Esc. Known caveat, recorded on that host: any SDL application that opens
 hidraw knocks the pad out of lizard mode.
+
+## The remote, and the one thing the greeter changed
+
+`cecd.service` is a **user** unit, `WantedBy=graphical-session.target`. It runs
+inside the `deck` session — so when the picker *was* a session it worked for
+free, and when the picker became the greeter it stopped existing at exactly the
+moment it was wanted.
+
+Three things had to be established, and all three now are.
+
+**It cannot simply become a system service.** Tried first, on the machine: cecd
+wants a session bus for `com.steampowered.CecDaemon1` and exits with an I/O
+error without one.
+
+**It does not need to be in the greeter's session.** What it publishes is a
+uinput keyboard, and uinput devices are global — they belong to no session at
+all. So the daemon only has to *still be running*, which is linger plus a want
+on `default.target`:
+
+```sh
+loginctl enable-linger deck
+ln -sf /usr/lib/systemd/user/cecd.service \
+       ~/.config/systemd/user/default.target.wants/cecd.service
+```
+
+Verified on the machine by stopping `graphical-session.target`, and again in the
+VM by restarting SDDM out from under it: `cecd` stays `active` and both of its
+input devices stay in `/proc/bus/input/devices`. `install.sh` does those two
+lines, and only if `cecd.service` exists — the Deck has no CEC hardware.
+
+**The greeter's compositor picks such a device up.** This was the part left
+unproven, because it needs a finger on a remote. It does not, quite: what
+matters is the *kind* of device, and one can be conjured — see the controller
+above, which is the same experiment with the same answer. cecd's device is a
+uinput keyboard, created by root, appearing after the greeter did, and that
+drives the picker.
+
+What remains untested is CEC itself end to end, which needs a television. The
+VM has a virtual CEC adapter (`vivid`) and cecd attaches to it and publishes its
+uinput keyboards, but the two virtual adapters are not on a shared bus, so no
+message can be made to arrive. Everything downstream of that arrival is proven.
 
 ## Steam takes the controller away — verified 2026-08-12
 
@@ -51,15 +117,15 @@ Quitting Steam brings lizard mode straight back — with Steam stopped, the
 controller navigates the picker with no bridge, no driver and no gamepad code.
 **Confirmed by driving the running picker with the controller.**
 
-This is why the picker needs nothing for controller support: its session never
-has Steam alive underneath it, which is exactly the state in which the puck
-behaves as a keyboard and mouse.
+This is why the picker needs nothing for controller support: it runs where Steam
+is not alive, which is exactly the state in which the puck behaves as a keyboard
+and mouse. The greeter is more firmly in that state than the old picker session
+was, not less.
 
 A bridge that converts joystick events into keys (evdev to uinput) was written
 and then deleted: it answered a problem that does not exist on this hardware. If
 a pad that has no lizard mode ever needs supporting, write it then — and against
 the stdlib, since stock SteamOS has no python-evdev.
-
 
 ## Whichever input was used last wins
 
@@ -77,3 +143,9 @@ whatever it is over.
 The threshold matters: the compositor delivers a motion event for the cursor it
 parks in the middle of the screen at startup, so anything simpler would show a
 cursor nobody asked for and preselect the middle card.
+
+## What is not there
+
+**No virtual keyboard.** Stock SteamOS loads qtvirtualkeyboard into the greeter,
+for typing a password. This one never asks for a password, so `InputMethod=` is
+cleared — one less thing to load before the room can see anything.

@@ -1,0 +1,16 @@
+[SddmGreeterTheme]
+Name=SteamOS session picker
+Description=Pick a session at boot, from the sofa
+Author=steamos-session-picker
+License=MIT
+Type=sddm-theme
+Version=1.0
+Website=https://github.com/VolanDeVovan/steamos-session-picker
+MainScript=Main.qml
+ConfigFile=theme.conf
+Theme-Id=steamos-session-picker
+Theme-API=2.0
+
+# The greeter binary is chosen from this key, and only Qt 6 will do: SteamOS
+# ships both runtimes and the Qt 5 one cannot load versionless imports.
+QtVersion=6

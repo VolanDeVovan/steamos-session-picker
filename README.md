@@ -52,19 +52,21 @@ Hence this.
 
 ## What it does
 
-- **Boots into a menu** rather than straight into Game Mode.
-- **Finds sessions by itself.** The list comes from
-  `steamosctl get-valid-desktop-sessions` and the desktop entries it names, so
-  installing a new session makes it show up on the next boot with nothing edited
-  here. Game Mode is added by hand, because SteamOS deliberately hides it from
-  that list.
+- **Boots into a menu** rather than straight into Game Mode. The menu *is* the
+  login screen — SDDM's own greeter, with a theme — so there is no extra session
+  between the display manager and the one you picked, and no wait to see it.
+- **Asks for no password**, and does not cheat to avoid one: autologin is off
+  and PAM is asked properly, through the same `nopasswdlogin` group Debian and
+  Ubuntu ship for this. `sudo` and ssh are untouched.
+- **Finds sessions by itself**, because SDDM already knows them all. Installing
+  a new session makes it appear on the next boot with nothing edited here — Game
+  Mode included, which is just another entry.
 - **Takes any input the room has.** The controller works with no gamepad code at
-  all: while Steam is not running — and in a login menu it is not — the puck
+  all: while Steam is not running — and at a login screen it is not — the puck
   presents itself as a plain USB keyboard and mouse. A TV remote arrives the
   same way through SteamOS's own CEC daemon.
-- **Reuses Steam's own button.** Once the picker is the default desktop session,
-  Steam's "Switch to Desktop" leads here too, so there is a way back without
-  rebooting.
+- **Reuses Steam's own button.** Steam's "Switch to Desktop" leads here too, so
+  there is a way back without rebooting.
 - **Looks like it belongs.** It runs immediately before Game Mode, so it uses
   Steam's palette and Big Picture's travelling focus rather than inventing a
   look of its own.
@@ -78,13 +80,16 @@ curl -fsSL https://raw.githubusercontent.com/VolanDeVovan/steamos-session-picker
 ```
 
 That is the whole installation: it clones the repository into
-`/opt/steamos-session-picker`, registers the session, and makes it the one the
-machine boots into. Reboot and you are in the picker.
+`/opt/steamos-session-picker` and makes the picker SDDM's login screen. Reboot
+and you are in it.
 
-Doing it in one go is safe because SDDM on SteamOS runs with `Relogin=true`,
-which would turn a picker that cannot start into an endless relogin loop — so
-the entry point counts runs that produced nothing and, after three in a boot,
-puts the machine back into Game Mode by itself.
+Doing it in one go is safe because nothing here can trap the machine. A theme
+that will not load falls back to a stock login screen with the error on it; a
+session that will not start returns to the picker. Neither is a loop.
+
+Run it as yourself, not as root: it asks for sudo once, up front, and elevates
+only the handful of commands that touch `/etc`. `sudo ./install.sh` works too —
+it sets the machine up for whoever invoked sudo, not for root.
 
 The steps are still separate underneath, which is what you want when changing
 anything:
@@ -92,36 +97,32 @@ anything:
 ```sh
 cd /opt/steamos-session-picker
 ./install.sh             # the whole thing, same as the one-liner
-./install.sh try         # start the picker once; the next boot is unaffected
-./install.sh enable      # make it the session the machine boots into
-./install.sh disable     # back to Game Mode
+./install.sh try         # restart SDDM now, to see it without rebooting
+./install.sh disable     # back to booting straight into Game Mode
 ./install.sh update      # git pull, then re-apply
 ./install.sh uninstall   # remove every trace
 ./install.sh --no-enable # set up, but keep booting as before
 ```
 
-Nothing here reboots; the picker appears at the next boot, or immediately via
-Steam's "Switch to Desktop", or with `./install.sh try`.
-
 Nothing is compiled, no packages are installed, and the read-only rootfs is
-never touched: SteamOS already ships `qml` and `kwin_wayland`, which is the
-entire runtime.
+never touched: SteamOS already ships `sddm-greeter-qt6` and `kwin_wayland`,
+which is the entire runtime.
 
-Nor is any configuration overridden. SDDM and `steamos-manager` both already
-search `/usr/local/share`, which happens to sit on the read-only rootfs — so
-instead of reconfiguring either of them, the session entry is added to that
-directory through an overlay mount, the same mechanism SteamOS uses for `/etc`.
-Existing contents stay visible, and after an OS update the new rootfs simply
-becomes the lower layer. The one unit in `/etc/systemd/system` is on SteamOS's
-default atomic-update keep list, so it survives updates on its own. The details,
-including why the overlay's upper layer cannot live on the home partition, are
-in [docs/install.md](docs/install.md).
+What lands outside the checkout is four small things: one SDDM drop-in that
+turns autologin off and says where the theme is, one added line in
+`/etc/pam.d/sddm`, one file naming that line so an OS update keeps it, and a
+`nopasswdlogin` group with your account in it. No unit, no overlay mount, no
+generated session entry — SDDM's theme directory is a setting, so the theme is
+read straight out of the checkout. Details in
+[docs/install.md](docs/install.md).
 
 ## Adding a session
 
-There is nothing to add here. Register a session with SteamOS the normal way —
-a `.desktop` file in a directory SDDM and `steamos-manager` look at — and the
-picker will list it, using the entry's `Name` and `Comment`.
+There is nothing to add here. Drop a `.desktop` file where SDDM looks for
+sessions — `/usr/share/wayland-sessions`, `/usr/local/share/wayland-sessions`,
+or the `xsessions` equivalents — and the picker lists it, using the entry's
+`Name` and `Comment`. That is SDDM's own session list, so if your session shows
+up in any other login screen it shows up here.
 
 ## How it works
 
@@ -134,10 +135,13 @@ picker will list it, using the entry's `Name` and `Comment`.
 
 ## Status
 
-Early. The interface, the session discovery and the choice protocol have been
-built and exercised, including with a real Steam Controller; the layout is
-checked by rendering it headlessly at 720p, 1080p and 4K.
+Early. Install, boot into the picker, choose with the keyboard, and land in the
+chosen session with no password — all verified end to end on a stock SteamOS
+image, in a virtual machine ([`steamos-vm/`](steamos-vm/README.md)). The layout
+is checked by rendering it headlessly at 720p, 1080p and 4K, and the interface
+has been driven with a real Steam Controller.
 
-What has **not** happened yet is an end-to-end run on a Steam Machine: the
-picker has never been installed on one. Everything in `docs/` marks plainly
-which facts were read off real hardware and which were not.
+What has **not** happened yet is a run on a Steam Machine: this theme has never
+been installed on one. Game Mode and the television — CEC end to end, HDR — are
+the parts a VM cannot answer at all. Everything in `docs/` marks plainly which
+facts were read off real hardware and which were not.

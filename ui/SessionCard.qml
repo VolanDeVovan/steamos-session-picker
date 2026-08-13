@@ -63,10 +63,14 @@ Item {
             }
 
             // Titles come from whatever desktop entries the machine has, so they
-            // are bounded and elided rather than trusted to fit.
+            // are bounded rather than trusted to fit. Two lines before eliding:
+            // a stock machine offers "Plasma (Wayland)", which is one character
+            // too many for a card at 720p and came out as "Plasma (Wayla…".
             Text {
                 width: card.width - 32 * card.u
                 horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+                maximumLineCount: 2
                 elide: Text.ElideRight
                 text: card.title
                 color: card.selected ? Theme.textFocused : Theme.textPrimary
