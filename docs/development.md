@@ -124,8 +124,10 @@ twice the pixels.
 
 Session titles are the one thing not under this repository's control — they come
 from whatever desktop entries the machine has. They wrap to two lines and elide
-after that; a stock machine offers "Plasma (Wayland)", which is one character
-too many for a card at 720p on a single line.
+after that; the name that set that bound was "Plasma (Wayland)", one character
+too many for a card at 720p on a single line. Both names a stock machine offers
+are retitled in `ui/entries.js` — Game Mode and Desktop Mode — so the bound now
+guards whatever session the machine grows next.
 
 ## HDR
 

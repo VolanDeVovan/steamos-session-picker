@@ -157,7 +157,7 @@ cannot load versionless imports.
 
 | Name | What it is |
 |---|---|
-| `sessionModel` | every session in `SessionDir`, with `name`, `comment`, `file` |
+| `sessionModel` | every session in `SessionDir`, with `name`, `comment`, `file` — `file` being the **path** it was read from, and `name` translated |
 | `userModel` | the accounts offered, and `lastUser` |
 | `sddm.login(user, password, index)` | authenticate and start, by row in `sessionModel` |
 | `config.*` | `theme.conf`, and `theme.conf.user` beside it |
@@ -167,6 +167,20 @@ anything else — `/usr/share/wayland-sessions/gamescope-wayland.desktop` is an
 ordinary entry. Only its *name* is special-cased, in `ui/entries.js`: the entry
 calls itself "SteamOS (gamescope)", which is the compositor, not the thing
 anyone is looking for.
+
+The desktop is special-cased the same way, and one entry is dropped. A stock
+machine has **two KDE sessions** — `plasma.desktop` (Wayland) and
+`plasmax11.desktop` — and the machine's own answer is the first:
+`steamosctl get-default-desktop-session` returns `plasma.desktop` on 3.8.14 with
+nothing configured, so that is the built-in default, not a leftover choice. The
+X11 entry is the fallback for hardware a Steam Machine is not, and it is hidden
+by `hide=` in the theme's `theme.conf`. The one that stays is titled **Desktop
+Mode**, which is what Steam's own menu calls the place it goes.
+
+Worth knowing while reading old scripts: `/usr/bin/steamos-session-select` is
+deprecated but still shipped "for Steam client compatibility", and in it a bare
+`plasma` still means **X11** — `steamosctl switch-to-desktop-mode
+plasmax11.desktop`. The Wayland default is reached as `plasma-wayland`.
 
 A C++ model cannot be indexed from QML, so `Main.qml` reads it through two
 invisible `Repeater`s and `itemAt()`. That is the reason they are there.
@@ -180,6 +194,11 @@ invisible `Repeater`s and `itemAt()`. That is the reason they are there.
   account itself — `sudo -u sddm test -r …` — rather than guessing from the path.
 - **A broken theme is not a brick.** SDDM falls back to a working login screen
   and prints the error on it. Seen in the VM, deliberately.
+- **`file` in `sessionModel` is a path, not a name.** It arrives as
+  `/usr/share/wayland-sessions/plasma.desktop`, and nothing says so — a match
+  against `plasma.desktop` simply never fires, silently. It made `hide=` a key
+  that did nothing until the VM was asked to put the raw value on a card.
+  Everything matching on a file goes through `Entries.fileName()` now.
 - **A session that fails to start is not a loop either.** SDDM returns to the
   greeter. `Relogin=true` only ever applied to autologin, which is now off — the
   failure mode that shaped the previous design no longer exists.

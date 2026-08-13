@@ -38,8 +38,11 @@ Item {
         return users.count > 0 ? users.itemAt(0).name : "";
     }
 
+    // `hide=` names entries the way a person does — plasmax11.desktop — and
+    // sessionModel's `file` role is the path SDDM read them from. Both ends go
+    // through Entries.fileName(), so a full path in theme.conf works too.
     readonly property var hidden: String(config.hide || "").split(",").map(function (s) {
-        return s.trim();
+        return Entries.fileName(s.trim());
     }).filter(function (s) {
         return s !== "";
     })
@@ -75,7 +78,7 @@ Item {
         var raw = [];
         for (var i = 0; i < sessions.count; i++) {
             var item = sessions.itemAt(i);
-            if (!item || hidden.indexOf(item.file) !== -1)
+            if (!item || hidden.indexOf(Entries.fileName(item.file)) !== -1)
                 continue;
             raw.push({
                 name: item.name,

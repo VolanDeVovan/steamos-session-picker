@@ -69,8 +69,10 @@ Item {
 
             // Titles come from whatever desktop entries the machine has, so they
             // are bounded rather than trusted to fit. Two lines before eliding:
-            // a stock machine offers "Plasma (Wayland)", which is one character
-            // too many for a card at 720p and came out as "Plasma (Wayla…".
+            // the name that set this bound was "Plasma (Wayland)", one character
+            // too many for a card at 720p, which came out as "Plasma (Wayla…".
+            // That one is retitled in entries.js now; the next entry the machine
+            // grows is not this repository's to name.
             Text {
                 width: card.width - 32 * card.u
                 horizontalAlignment: Text.AlignHCenter

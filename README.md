@@ -124,6 +124,11 @@ or the `xsessions` equivalents — and the picker lists it, using the entry's
 `Name` and `Comment`. That is SDDM's own session list, so if your session shows
 up in any other login screen it shows up here.
 
+One entry is left out of it: a stock machine has two KDE sessions, and
+`plasmax11.desktop` — the X11 twin of the Wayland session SteamOS itself
+defaults to — is named in `hide=` in the theme's `theme.conf`. Put `hide=` in a
+`theme.conf.user` beside it to have it back, or to hide something else.
+
 ## How it works
 
 | Topic | |
