@@ -160,6 +160,7 @@ cannot load versionless imports.
 | `sessionModel` | every session in `SessionDir`, with `name`, `comment`, `file` — `file` being the **path** it was read from, and `name` translated |
 | `userModel` | the accounts offered, and `lastUser` |
 | `sddm.login(user, password, index)` | authenticate and start, by row in `sessionModel` |
+| `sddm.suspend()`, `sddm.reboot()` | and `canSuspend`/`canReboot`, which are logind's answer to whether the greeter may — so a machine that would refuse never shows the button |
 | `config.*` | `theme.conf`, and `theme.conf.user` beside it |
 
 `sessionModel` is the whole of session discovery, and Game Mode is in it like

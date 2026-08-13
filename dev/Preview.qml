@@ -20,6 +20,7 @@ import "sessions.js" as Sessions
 //   --fullscreen        take the whole output
 //   --size=WxH          window size, for checking the layout at 4K or 720p
 //   --select=N          preselect card N (0-based)
+//   --power=N           put the focus on power button N instead of the shelf
 //   --launching         render the launch overlay
 //   --shot=PATH         grab the scene into PATH and quit; works headless with
 //                       QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software
@@ -54,11 +55,35 @@ Window {
         // greeter this comes from SDDM's own sessionModel.
         sessions: Entries.build(Sessions.sessions)
 
+        // In the greeter this list comes from SDDM saying what logind allows.
+        // Here both are simply offered, because the point is to look at them.
+        powerActions: [
+            {
+                id: "sleep",
+                label: "Sleep"
+            },
+            {
+                id: "restart",
+                label: "Restart"
+            },
+            {
+                id: "poweroff",
+                label: "Power off"
+            }
+        ]
+
         // Nothing is started from here: there is no session to start into and
         // no SDDM to ask. Choosing a card shows the launch overlay, which is
         // the state worth looking at, and stops there.
         onActivated: function (index) {
             console.log("picker: would start " + root.picker.sessions[index].file);
+        }
+
+        // Emphatically not wired to anything real: this window is an ordinary
+        // application on a developer's desktop, and it is not going to put it
+        // to sleep.
+        onPowerActivated: function (id) {
+            console.log("picker: would ask the machine to " + id);
         }
     }
 
@@ -73,6 +98,12 @@ Window {
         const preselect = argValue("--select=");
         if (preselect !== "")
             picker.currentIndex = parseInt(preselect);
+
+        const power = argValue("--power=");
+        if (power !== "") {
+            picker.focusRow = 1;
+            picker.powerIndex = parseInt(power);
+        }
 
         if (hasArg("--launching")) {
             picker.launching = true;

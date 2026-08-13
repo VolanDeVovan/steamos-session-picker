@@ -66,7 +66,26 @@ Item {
         return false;
     }
 
+    // What the machine can be told to do besides starting a session. Empty by
+    // default: the shelf asks for nothing the thing above it cannot do, and in
+    // the greeter these come from SDDM saying whether logind will allow them.
+    //
+    //   [{ id: "suspend", label: "Sleep" }, …]
+    //
+    // Reached with Down rather than with a button of their own, and that is the
+    // hardware talking: a Steam Controller in lizard mode and a television
+    // remote through cecd both arrive as arrows, Enter and Esc, and nothing
+    // else — see docs/input.md. A shortcut on X or Y would exist only for the
+    // keyboard nobody has in front of the television.
+    property var powerActions: []
+
+    // 0 is the shelf, 1 is the row below it. There is no third row and this is
+    // deliberately not a general focus system.
+    property int focusRow: 0
+    property int powerIndex: 0
+
     signal activated(int index)
+    signal powerActivated(string id)
     signal cancelled
 
     // Everything is sized against a 1920x1080 design, so the layout holds on a
@@ -81,14 +100,37 @@ Item {
     focus: true
 
     function move(delta) {
-        if (launching || sessions.length === 0)
+        if (launching)
+            return;
+        if (focusRow === 1) {
+            const p = powerActions.length;
+            if (p > 0)
+                powerIndex = (powerIndex + delta + p) % p;
+            return;
+        }
+        if (sessions.length === 0)
             return;
         const n = sessions.length;
         currentIndex = (currentIndex + delta + n) % n;
     }
 
+    // Down leaves the shelf for the power row and Up comes back. Nothing else
+    // moves between them, so a room that never presses Down never meets them.
+    function moveRow(delta) {
+        if (launching || powerActions.length === 0)
+            return;
+        focusRow = Math.max(0, Math.min(1, focusRow + delta));
+    }
+
     function activate() {
-        if (launching || sessions.length === 0)
+        if (launching)
+            return;
+        if (focusRow === 1) {
+            if (powerActions.length > 0)
+                powerActivated(powerActions[powerIndex].id);
+            return;
+        }
+        if (sessions.length === 0)
             return;
         launchingTitle = sessions[currentIndex].title;
         launching = true;
@@ -97,19 +139,31 @@ Item {
 
     Keys.onLeftPressed: root.move(-1)
     Keys.onRightPressed: root.move(1)
+    Keys.onUpPressed: root.moveRow(-1)
+    Keys.onDownPressed: root.moveRow(1)
     Keys.onReturnPressed: root.activate()
     Keys.onEnterPressed: root.activate()
     Keys.onSpacePressed: root.activate()
     Keys.onEscapePressed: {
-        if (root.cancellable && !root.launching)
+        // Esc is B on a controller, so it means "back" before it means
+        // anything else: out of the power row first, and only then whatever
+        // cancelling the picker itself means.
+        if (root.launching)
+            return;
+        if (root.focusRow === 1)
+            root.focusRow = 0;
+        else if (root.cancellable)
             root.cancelled();
     }
     Keys.onPressed: function (event) {
         // Any key means the pointer is not what is being used.
         root.pointerActive = false;
 
-        // Number keys as direct shortcuts: 1 = first card, and so on.
+        // Number keys as direct shortcuts: 1 = first card, and so on. From the
+        // power row too — a number names a session, so it says which row is
+        // meant as well as which card.
         if (event.key >= Qt.Key_1 && event.key < Qt.Key_1 + root.sessions.length) {
+            root.focusRow = 0;
             root.currentIndex = event.key - Qt.Key_1;
             root.activate();
             event.accepted = true;
@@ -238,7 +292,12 @@ Item {
                 height: root.cardHeight * root.focusScale + pad * 2
                 x: root.currentIndex * track.step + root.cardWidth / 2 - width / 2
                 y: (track.height - height) / 2
-                opacity: root.launching || root.sessions.length === 0 ? 0 : 1
+
+                // Dimmed rather than gone while the power row has the focus:
+                // two things lit the same way is two things claiming to be
+                // selected, and this one still has to say where Up comes back
+                // to.
+                opacity: root.launching || root.sessions.length === 0 ? 0 : (root.focusRow === 1 ? 0.25 : 1)
 
                 Behavior on x {
                     NumberAnimation {
@@ -293,10 +352,13 @@ Item {
                     pointerActive: root.pointerActive
 
                     onHovered: function (scenePos) {
-                        if (root.notePointer(scenePos))
+                        if (root.notePointer(scenePos)) {
+                            root.focusRow = 0;
                             root.currentIndex = index;
+                        }
                     }
                     onActivated: {
+                        root.focusRow = 0;
                         root.currentIndex = index;
                         root.activate();
                     }
@@ -311,11 +373,139 @@ Item {
         y: parent.height - height - 64 * root.u
         color: Theme.textFaint
         font.pixelSize: 21 * root.u
-        text: root.cancellable ? "←  →   select        Enter   launch        Esc   cancel" : "←  →   select        Enter   launch"
+        text: {
+            var hint = "←  →   select        Enter   launch";
+            if (root.powerActions.length > 0)
+                hint += "        ↓   power";
+            if (root.cancellable)
+                hint += "        Esc   cancel";
+            return hint;
+        }
         opacity: root.launching ? 0 : 1
         Behavior on opacity {
             NumberAnimation {
                 duration: 160
+            }
+        }
+    }
+
+    // --- power row ----------------------------------------------------------
+    // Bottom right, quiet until it is reached: this is the one corner nothing
+    // else uses, and turning the machine off is not what the room came here to
+    // do. Icons rather than words, because three labels in a corner read as a
+    // toolbar and this is not one — and the word for whichever icon has the
+    // focus appears above the row, so nothing has to be guessed at the moment
+    // it is about to be pressed.
+    Item {
+        id: powerRow
+
+        readonly property real button: 66 * root.u
+        readonly property real gap: 16 * root.u
+        readonly property int count: root.powerActions.length
+
+        width: count * button + Math.max(0, count - 1) * gap
+        height: button + powerLabel.height + 10 * root.u
+        x: parent.width - width - 72 * root.u
+        y: parent.height - height - 44 * root.u
+        opacity: root.launching || count === 0 ? 0 : 1
+        visible: opacity > 0
+
+        Behavior on opacity {
+            NumberAnimation {
+                duration: 160
+            }
+        }
+
+        // The word for the icon under the focus, over the icon it belongs to
+        // and travelling with it. Right-aligning it to the row would have left
+        // it naming whichever button happened to be last.
+        Text {
+            id: powerLabel
+
+            x: root.powerIndex * (powerRow.button + powerRow.gap) + powerRow.button / 2 - width / 2
+            text: powerRow.count > 0 ? root.powerActions[Math.min(root.powerIndex, powerRow.count - 1)].label : " "
+            color: Theme.textPrimary
+            font.pixelSize: 21 * root.u
+            opacity: root.focusRow === 1 ? 1 : 0
+
+            Behavior on x {
+                NumberAnimation {
+                    duration: 160
+                    easing.type: Easing.OutCubic
+                }
+            }
+            Behavior on opacity {
+                NumberAnimation {
+                    duration: 160
+                }
+            }
+        }
+
+        Row {
+            y: powerLabel.height + 10 * root.u
+            spacing: powerRow.gap
+
+            Repeater {
+                model: root.powerActions
+
+                Rectangle {
+                    id: button
+
+                    required property var modelData
+                    required property int index
+
+                    readonly property bool selected: root.focusRow === 1 && root.powerIndex === index
+
+                    width: powerRow.button
+                    height: powerRow.button
+                    radius: width / 2
+                    color: selected ? Theme.surfaceFocused : "transparent"
+                    border.width: selected ? 2 * root.u : 1 * root.u
+                    border.color: selected ? Theme.accent : Theme.outline
+                    scale: selected ? 1.08 : 1
+
+                    Behavior on color {
+                        ColorAnimation {
+                            duration: 160
+                        }
+                    }
+                    Behavior on scale {
+                        NumberAnimation {
+                            duration: 160
+                            easing.type: Easing.OutCubic
+                        }
+                    }
+
+                    PowerIcon {
+                        anchors.centerIn: parent
+                        kind: button.modelData.id
+                        size: 34 * root.u
+                        tint: button.selected ? Theme.accent : Theme.iconIdle
+                        Behavior on tint {
+                            ColorAnimation {
+                                duration: 160
+                            }
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: root.pointerActive ? Qt.ArrowCursor : Qt.BlankCursor
+
+                        onPositionChanged: function (mouse) {
+                            if (root.notePointer(mapToItem(null, mouse.x, mouse.y))) {
+                                root.focusRow = 1;
+                                root.powerIndex = button.index;
+                            }
+                        }
+                        onClicked: {
+                            root.focusRow = 1;
+                            root.powerIndex = button.index;
+                            root.activate();
+                        }
+                    }
+                }
             }
         }
     }

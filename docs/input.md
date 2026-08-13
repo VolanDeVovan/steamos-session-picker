@@ -28,6 +28,15 @@ the remote arrives as a keyboard as well.
 
 **Keyboard and mouse.** Plain USB, nothing special.
 
+### What that leaves to design with
+
+Arrows, Enter and Esc. That is the whole vocabulary a room actually has, from
+the pad and from the remote alike, and it is why Sleep and Restart sit in a row
+below the shelf reached with **Down** rather than on a button of their own: an
+X or a Y exists only on the keyboard nobody has in front of a television.
+Esc — B on the pad — comes back up, because on a controller that button means
+"back" before it means anything else.
+
 ### The puck against the greeter, without a puck
 
 Being two HID devices is exactly what makes the controller reproducible without

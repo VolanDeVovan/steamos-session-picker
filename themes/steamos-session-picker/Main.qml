@@ -90,10 +90,48 @@ Item {
         return Entries.build(raw);
     }
 
+    // What the machine can be told to do, offered only where logind will
+    // actually allow it — SDDM asks on our behalf and answers in canSuspend,
+    // canReboot and canPowerOff, so a machine that would refuse shows nothing
+    // rather than a button that does nothing.
+    //
+    // Powering off is here because the remote cannot reach the case: the one
+    // thing a television remote provably cannot do is press a button on the
+    // machine, and Steam's own power menu offers the same three.
+    readonly property var powerActions: {
+        var actions = [];
+        if (sddm.canSuspend)
+            actions.push({
+                id: "sleep",
+                label: "Sleep"
+            });
+        if (sddm.canReboot)
+            actions.push({
+                id: "restart",
+                label: "Restart"
+            });
+        if (sddm.canPowerOff)
+            actions.push({
+                id: "poweroff",
+                label: "Power off"
+            });
+        return actions;
+    }
+
     Picker {
         id: picker
         anchors.fill: parent
         sessions: root.cards
+        powerActions: root.powerActions
+
+        onPowerActivated: function (id) {
+            if (id === "sleep")
+                sddm.suspend();
+            else if (id === "restart")
+                sddm.reboot();
+            else if (id === "poweroff")
+                sddm.powerOff();
+        }
 
         // Nowhere to go back to: this is the first thing after the firmware.
         cancellable: false

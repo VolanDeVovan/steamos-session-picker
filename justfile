@@ -31,6 +31,7 @@ shots:
     just shot "card-$i" --select="$i" >/dev/null
   done
   just shot launching --select=0 --launching >/dev/null
+  just shot power --power=0 >/dev/null
   just shot 4k --select=1 --size=3840x2160 >/dev/null
   just shot 720p --select=1 --size=1280x720 >/dev/null
   ls dev/shots/
