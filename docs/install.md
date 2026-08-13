@@ -122,6 +122,11 @@ over to `install.sh`. Nothing is copied out of the checkout:
 group nopasswdlogin                              with one member
 ~sddm/.config/systemd/user/default.target.wants/cecd.service
                                                  the television remote, see input.md
+~sddm/.config/systemd/user/default.target.wants/plasma-powerdevil.service
+~sddm/.config/systemd/user/plasma-powerdevil.service.d/greeter.conf
+~sddm/.config/powerdevilrc                       the screen goes off and the
+                                                 machine sleeps at the picker,
+                                                 see mechanism.md
 ```
 
 Consequences of that choice, which is why it is made:
@@ -145,6 +150,15 @@ that failed to start became an endless relogin loop. **That failure mode is
 gone.** A theme that will not load falls back to a stock login screen with the
 error on it; a session that will not start returns to the greeter. Neither is a
 loop, so `bootstrap.sh` does the whole thing in one go.
+
+**One failure is still not recoverable from the sofa**, and it is the PAM rule.
+The picker has no password field — it never asks for one — so a stack that
+cannot say yes to `nopasswdlogin` gives a screen that shows every session and
+starts none of them, with ssh or a text console as the only way in. That is why
+`check()` looks for `pam_succeed_if.so` before anything is written, why the keep
+file below exists at all, and why `Main.qml` names the rule on screen instead of
+blaming the session. An OS update that replaces `/etc/pam.d/sddm` is the way it
+would happen.
 
 The way out is still there and still runnable over ssh from another computer:
 

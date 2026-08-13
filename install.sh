@@ -1,8 +1,8 @@
 #!/bin/sh
 # Make the session picker SDDM's login screen. Run it on the machine.
 #
-# The checkout is the installation: nothing is copied anywhere. Three things
-# land outside it, all of them small, and none replaces a file SteamOS ships:
+# The checkout is the installation: nothing is copied anywhere. What lands
+# outside it is small, and none of it replaces a file SteamOS ships:
 #
 #   /etc/sddm.conf.d/zzz-steamos-session-picker.conf   turns autologin off and
 #                                                      names this theme
@@ -12,6 +12,14 @@
 #   /etc/atomic-update.conf.d/steamos-session-picker.conf
 #                                                      keeps that line across an
 #                                                      OS update
+#   ~sddm/.config/…                                    two services SteamOS
+#                                                      already ships, hung off
+#                                                      the greeter's own
+#                                                      session: cecd for the
+#                                                      television remote, and
+#                                                      powerdevil so the screen
+#                                                      goes off and the machine
+#                                                      sleeps at the picker
 #
 # plus the `nopasswdlogin` group itself, with one member. Why each of those is
 # the shape it is: docs/mechanism.md.
@@ -40,6 +48,27 @@ GROUP="nopasswdlogin"
 PAM_MARK="# steamos-session-picker"
 PAM_RULE="auth        sufficient  pam_succeed_if.so user ingroup $GROUP $PAM_MARK"
 
+# How long the picker may sit on a television before the screen goes off, and
+# before the machine sleeps. Five minutes and fifteen: the same two-step a
+# console does, so walking away from the login screen ends where walking away
+# from Game Mode ends. powerdevil will not go below 30 seconds whatever it is
+# asked for, and PICKER_SLEEP=0 leaves the machine awake.
+blank=${PICKER_BLANK:-300}
+sleep_after=${PICKER_SLEEP:-900}
+
+# Checked here rather than where they are used: both are read halfway through
+# the install, and `set -e` on a non-number would stop it after PAM and the
+# group had already been written — the half-set-up state the sudo prompt above
+# exists to avoid.
+for n in "$blank" "$sleep_after"; do
+    case $n in
+    '' | *[!0-9]*)
+        printf 'install: PICKER_BLANK and PICKER_SLEEP are seconds, and "%s" is not.\n' "$n" >&2
+        exit 2
+        ;;
+    esac
+done
+
 # Run it as yourself, and it calls sudo where it needs to; `sudo ./install.sh`
 # works too. Either way this is the account being set up, and it is never root:
 # the whole job is to arrange for one person to reach their sessions, and root
@@ -65,6 +94,12 @@ as_user() {
     else
         "$@"
     fi
+}
+
+# The greeter's own account. Its home is where systemd looks for that account's
+# user units, and two services below are hung off it.
+sddm_home() {
+    getent passwd sddm | cut -d: -f6
 }
 
 need() {
@@ -118,6 +153,19 @@ check() {
     # rejects versionless imports with "Library import requires a version".
     [ -x /usr/bin/sddm-greeter-qt6 ] || {
         printf 'install: /usr/bin/sddm-greeter-qt6 is missing; this theme needs the Qt 6 greeter\n' >&2
+        exit 1
+    }
+
+    # The one failure with no way back from a sofa. The picker has no password
+    # field — it never asks for one — so a machine whose PAM stack cannot say
+    # yes to the group shows every card and starts none of them, and the way in
+    # is ssh or a text console. Everything else here fails visibly and
+    # recoverably; this would not, so the module is looked for before the
+    # machine is changed rather than found missing at the next boot.
+    [ -e /usr/lib/security/pam_succeed_if.so ] || {
+        printf 'install: /usr/lib/security/pam_succeed_if.so is missing.\n' >&2
+        printf 'install: the passwordless login is that module, and the picker cannot\n' >&2
+        printf 'install: ask for a password instead. Nothing was changed.\n' >&2
         exit 1
     }
 
@@ -206,11 +254,98 @@ keep_remote_alive() {
     [ -f /usr/lib/systemd/user/cecd.service ] || return 0
 
     # sddm's home, not ~/.config: this unit belongs to the greeter's account.
-    wants=$(getent passwd sddm | cut -d: -f6)/.config/systemd/user/default.target.wants
+    wants=$(sddm_home)/.config/systemd/user/default.target.wants
     sudo install -d -o sddm -g sddm -m 755 "$wants"
     sudo ln -sf /usr/lib/systemd/user/cecd.service "$wants/cecd.service"
     sudo chown -h sddm:sddm "$wants/cecd.service"
     printf 'the remote now works while the picker is on screen\n'
+}
+
+# The screen, once the room has walked away. Game Mode leaves idling to Steam
+# and Desktop Mode to powerdevil, which is part of the Plasma session — so the
+# login screen was the one place on this machine with no opinion at all, and a
+# picker left alone lit a static picture on a television until someone came
+# back. On an OLED that is not a question of watts.
+#
+# powerdevil is in the image and is an ordinary D-Bus service, so it goes where
+# cecd went: an instance in the greeter's own session. Two things it is handed
+# inside Plasma and has to be given here:
+#
+#   WAYLAND_DISPLAY   Plasma exports its session environment into the user
+#                     manager and the greeter does not. Without it powerdevil
+#                     takes the xcb plugin, finds no display, and aborts.
+#   no burst limit    default.target is reached before kwin has made the
+#                     socket, so the first tries fail on purpose. Retrying is
+#                     the whole answer, and the default five-in-ten-seconds
+#                     gives up before the compositor is there.
+#
+# The profile is the two steps a console makes: screen off, then sleep. Valve's
+# own /etc/xdg/powerdevilrc turns auto-suspend off on AC and sets it for a Deck
+# on battery, which is a handheld's answer and not a living room's — a machine
+# left at a login screen should end up where it ends up when it is left in Game
+# Mode. Everything not named here is still inherited from that file.
+#
+# **Waking from that sleep has not been tested on a Steam Machine.** Game Mode
+# sleeps and wakes from the pad, and the wake sources are the kernel's rather
+# than Steam's, so it should hold here too — but "should" is the word. The
+# power button is the way back if it does not, and `PICKER_SLEEP=0` is the way
+# to say the machine may not sleep at the picker at all.
+blank_the_screen() {
+    [ -f /usr/lib/systemd/user/plasma-powerdevil.service ] || return 0
+
+    home=$(sddm_home)
+    wants=$home/.config/systemd/user/default.target.wants
+    drop=$home/.config/systemd/user/plasma-powerdevil.service.d
+
+    sudo install -d -o sddm -g sddm -m 755 "$wants" "$drop"
+    sudo ln -sf /usr/lib/systemd/user/plasma-powerdevil.service "$wants/plasma-powerdevil.service"
+    sudo chown -h sddm:sddm "$wants/plasma-powerdevil.service"
+
+    sudo tee "$drop/greeter.conf" >/dev/null <<EOF
+# Written by $ROOT/install.sh — powerdevil in a session that is not Plasma's.
+
+[Unit]
+StartLimitIntervalSec=0
+
+[Service]
+Environment=WAYLAND_DISPLAY=wayland-0
+# Wait for the compositor instead of dying on it. default.target is reached
+# before kwin has made the socket, and a service that aborts and is restarted
+# gets there in the end — but only by way of a crash the journal cannot tell
+# from a real one. Waiting says what is meant, and a machine where no wayland
+# greeter ever appears — the silent X11 fallback in development.md — gives up
+# after a minute and retries slowly instead of respawning twice a second.
+ExecStartPre=/bin/sh -c 'n=0; while [ ! -S "\$XDG_RUNTIME_DIR/wayland-0" ]; do [ \$n -ge 120 ] && exit 1; n=\$((n + 1)); sleep 0.5; done'
+# always, not on-failure: losing the compositor is how this ends every time a
+# session starts, and whether that arrives as a crash or as a clean exit is
+# powerdevil's business, not something to depend on.
+Restart=always
+RestartSec=5
+EOF
+
+    # AutoSuspendAction is the same enumeration as the power button's, where 1
+    # is sleep and 0 is do nothing — Valve's file uses both values, which is
+    # where they are read from rather than guessed.
+    sudo tee "$home/.config/powerdevilrc" >/dev/null <<EOF
+# Written by $ROOT/install.sh. This is the greeter's account, so it says
+# nothing about the sessions it starts — they carry their own.
+#
+# On mains only. A Steam Deck running from its battery keeps the numbers Valve
+# ships in /etc/xdg/powerdevilrc — screen off at 60s, asleep at 300s — which is
+# a better answer for a handheld than anything decided here.
+[AC][Display]
+TurnOffDisplayIdleTimeoutSec=$blank
+
+[AC][SuspendAndShutdown]
+AutoSuspendAction=$([ "$sleep_after" -gt 0 ] && echo 1 || echo 0)
+AutoSuspendIdleTimeoutSec=$sleep_after
+EOF
+    sudo chown sddm:sddm "$drop/greeter.conf" "$home/.config/powerdevilrc"
+    if [ "$sleep_after" -gt 0 ]; then
+        printf 'on mains, the picker turns the screen off after %ss and sleeps after %ss\n' "$blank" "$sleep_after"
+    else
+        printf 'on mains, the picker turns the screen off after %ss and never sleeps\n' "$blank"
+    fi
 }
 
 enable_boot() {
@@ -282,6 +417,7 @@ install)
     check
     allow_passwordless
     keep_remote_alive
+    blank_the_screen
     printf 'set up from %s, for user %s\n' "$ROOT" "$user"
     if [ -n "$no_enable" ]; then
         # `update` comes through here, on a machine that is usually already
@@ -334,7 +470,10 @@ disable)
 uninstall)
     require_sudo
     sudo rm -f "$SDDM_CONF" "$KEEP_FILE"
-    sudo rm -f "$(getent passwd sddm | cut -d: -f6)/.config/systemd/user/default.target.wants/cecd.service"
+    sudo rm -f "$(sddm_home)/.config/systemd/user/default.target.wants/cecd.service"
+    sudo rm -f "$(sddm_home)/.config/systemd/user/default.target.wants/plasma-powerdevil.service"
+    sudo rm -rf "$(sddm_home)/.config/systemd/user/plasma-powerdevil.service.d"
+    sudo rm -f "$(sddm_home)/.config/powerdevilrc"
     if [ -f "$PAM_FILE.steamos-session-picker.orig" ]; then
         sudo mv "$PAM_FILE.steamos-session-picker.orig" "$PAM_FILE"
     else

@@ -124,9 +124,16 @@ Item {
 
         // The greeter is torn down from under us on success, so there is
         // nothing to do but keep the overlay up until that happens.
+        //
+        // This is not a session that failed to start — SDDM returns to the
+        // greeter for that. It is PAM saying no to a login with no password,
+        // which on a machine set up by install.sh means the rule is gone: an
+        // OS update that replaced /etc/pam.d/sddm, or an account no longer in
+        // the group. Say that, because there is no password field to try
+        // instead and the way back is ssh or a text console.
         function onLoginFailed() {
             picker.launching = false;
-            picker.message = "That session could not be started";
+            picker.message = "Login refused — the passwordless rule is missing";
         }
     }
 }

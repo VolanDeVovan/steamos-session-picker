@@ -83,9 +83,18 @@ That is the whole installation: it clones the repository into
 `/opt/steamos-session-picker` and makes the picker SDDM's login screen. Reboot
 and you are in it.
 
-Doing it in one go is safe because nothing here can trap the machine. A theme
-that will not load falls back to a stock login screen with the error on it; a
-session that will not start returns to the picker. Neither is a loop.
+Doing it in one go is safe because the things that go wrong here are visible
+and recoverable. A theme that will not load falls back to a stock login screen
+with the error on it; a session that will not start returns to the picker.
+Neither is a loop.
+
+The one exception is worth knowing before you install: the picker has no
+password field, because it never asks for one. If the PAM rule is ever gone —
+an OS update that replaces `/etc/pam.d/sddm`, an account taken out of the group
+— every card is shown and none of them starts, and the way back in is ssh or a
+text console rather than the pad in your hand. `install.sh` refuses to set the
+machine up if the module that rule needs is missing, and the picker says which
+rule it is when a login is refused.
 
 Run it as yourself, not as root: it asks for sudo once, up front, and elevates
 only the handful of commands that touch `/etc`. `sudo ./install.sh` works too —
@@ -111,9 +120,12 @@ which is the entire runtime.
 What lands outside the checkout is four small things: one SDDM drop-in that
 turns autologin off and says where the theme is, one added line in
 `/etc/pam.d/sddm`, one file naming that line so an OS update keeps it, and a
-`nopasswdlogin` group with your account in it. No unit, no overlay mount, no
-generated session entry — SDDM's theme directory is a setting, so the theme is
-read straight out of the checkout. Details in
+`nopasswdlogin` group with your account in it. Plus, in the greeter account's
+own home, two services SteamOS already ships hung off its session: the CEC
+daemon, so the television remote works, and powerdevil, so a picker nobody
+answers turns the screen off and then sleeps. No system unit, no overlay mount,
+no generated session entry — SDDM's theme directory is a setting, so the theme
+is read straight out of the checkout. Details in
 [docs/install.md](docs/install.md).
 
 ## Adding a session
@@ -136,7 +148,7 @@ defaults to — is named in `hide=` in the theme's `theme.conf`. Put `hide=` in 
 | How SteamOS decides which session to start, and the pitfalls | [docs/mechanism.md](docs/mechanism.md) |
 | Installing on an immutable OS, and what survives updates | [docs/install.md](docs/install.md) |
 | Controller, TV remote, keyboard, mouse | [docs/input.md](docs/input.md) |
-| The choice protocol, and how this is developed and tested | [docs/development.md](docs/development.md) |
+| How this is developed and tested, and what a VM cannot answer | [docs/development.md](docs/development.md) |
 
 ## Status
 

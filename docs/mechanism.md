@@ -185,6 +185,50 @@ plasmax11.desktop`. The Wayland default is reached as `plasma-wayland`.
 A C++ model cannot be indexed from QML, so `Main.qml` reads it through two
 invisible `Repeater`s and `itemAt()`. That is the reason they are there.
 
+## The screen, when nobody picks anything
+
+Game Mode leaves idling to Steam, Desktop Mode to powerdevil — which runs as
+part of the Plasma session and therefore not at a login screen. So the greeter
+was the one place on the machine with **no opinion at all**: a picker nobody
+answered lit a static picture on a television until someone came back, and
+never slept.
+
+powerdevil is in the image as an ordinary D-Bus service, so it goes where cecd
+went — an instance in the greeter's own session, one symlink into that
+account's user units. Two things it is handed inside Plasma and has to be given
+here, both in `plasma-powerdevil.service.d/greeter.conf`:
+
+| | |
+|---|---|
+| `Environment=WAYLAND_DISPLAY=wayland-0` | Plasma exports its session environment into the user manager; the greeter does not. Without it powerdevil loads the xcb plugin, finds no display and aborts — `SIGABRT`, three times, then systemd gives up on it. |
+| `ExecStartPre=…` waiting for the socket | `default.target` is reached before kwin has made it. Crashing and being restarted also gets there, but only by way of a failure the journal cannot tell from a real one — and on a machine where no Wayland greeter ever appears (the silent X11 fallback in [development.md](development.md)) it respawns twice a second forever. The wait gives up after a minute instead. |
+| `Restart=always` | Losing the compositor is how this ends every time a session starts. Whether powerdevil reports that as a crash or a clean exit is its business, not something to depend on. |
+
+The profile in `~sddm/.config/powerdevilrc` names two numbers — screen off at
+five minutes, sleep at fifteen — and inherits everything else from SteamOS's
+own `/etc/xdg/powerdevilrc`. That file is worth reading before changing any of
+this: it is where `AutoSuspendAction` is read from rather than guessed (`1` is
+sleep, `0` is do nothing, the same enumeration the power button uses), and it
+sets `AutoSuspendIdleTimeoutSec=300` for a Deck on battery while leaving a
+machine on AC awake. A living room is not a handheld, so the picker sleeps.
+
+Verified in the VM: the screen goes off on time, any key brings it back — and
+the key that wakes it is swallowed, so nothing is launched by someone reaching
+for the pad in the dark. The machine then really does suspend, QEMU reporting
+`paused (suspended)`, and it resumes. Checked on the second greeter as well as
+the first, because that is the one a finished session returns to: after
+`systemctl restart sddm` the picker blanks and wakes exactly as before, with
+`NRestarts` one higher than it was.
+
+**What the VM cannot answer**, and what has to be tried on a Steam Machine:
+whether the picture comes back after that resume, and whether a controller
+wakes the machine at all. In the VM it does not — `virtio_gpu` fails its
+pageflip after S3 and takes kwin down with it, which the kernel itself calls a
+driver bug. Game Mode sleeps and wakes from the pad on the real thing, and wake
+sources are the kernel's business rather than Steam's, so it should hold here
+too. Until it is tried: the power button is the way back, and
+`PICKER_SLEEP=0 ./install.sh` is the way to say the picker may not sleep.
+
 ## Pitfalls
 
 - **The greeter runs as user `sddm`, not as you.** A checkout in a home

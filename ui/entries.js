@@ -47,8 +47,11 @@ function isGameMode(entry) {
 //
 // Matched on the file name rather than on `Name`, which SDDM hands over
 // translated: on a Russian machine it arrives as "Плазма (Wayland)".
+// Anchored on the two entries a stock machine has, not on a prefix: a machine
+// that grows `plasma-bigscreen.desktop` should get a card of its own rather
+// than a second one calling itself Desktop Mode.
 function isDesktopMode(entry) {
-    return /^plasma/.test(fileName(entry.file));
+    return /^plasma(x11)?\.desktop$/.test(fileName(entry.file));
 }
 
 function titleFor(entry) {
