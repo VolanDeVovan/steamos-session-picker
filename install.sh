@@ -12,13 +12,13 @@
 # machine to Game Mode if the picker fails to start three times in a boot. The
 # steps stay separately available for when something is being changed.
 #
-#   ./install.sh             register it and boot into it — the whole thing
-#   ./install.sh register    register only, changing no defaults
-#   ./install.sh try         start the picker once, reverts on reboot
-#   ./install.sh enable      make it the session the machine boots into
-#   ./install.sh disable     back to Game Mode — the way out of a relogin loop
-#   ./install.sh update      git pull, then re-register
-#   ./install.sh uninstall   disable and remove every trace
+#   ./install.sh              install it and boot into it — the whole thing
+#   ./install.sh try          start the picker once, reverts on reboot
+#   ./install.sh enable       make it the session the machine boots into
+#   ./install.sh disable      back to Game Mode — the way out of a relogin loop
+#   ./install.sh update       git pull, then re-apply
+#   ./install.sh uninstall    disable and remove every trace
+#   --no-enable               with no command: set up, but keep booting as before
 #
 # If the machine ever boots into a loop, from another computer:
 #   ssh deck@<machine> steamosctl set-default-login-mode game
@@ -93,25 +93,58 @@ EOF
     systemctl --user restart steamos-manager.service
 }
 
+enable_boot() {
+    require_registered
+    steamosctl set-default-desktop-session "$SESSION"
+    steamosctl set-default-login-mode desktop
+    printf 'the machine now boots into the picker\n'
+    printf 'to undo: %s disable\n' "$0"
+}
+
+usage() {
+    cat >&2 <<EOF
+usage: $0 [command] [--no-enable]
+
+  (no command)  set the picker up and make it the session the machine boots into
+  try           start the picker once, now; the next boot is unaffected
+  enable        make the picker the session the machine boots into
+  disable       go back to booting straight into Game Mode
+  update        git pull, then re-apply
+  uninstall     disable, then remove every trace outside this checkout
+
+  --no-enable   set up only; do not change what the machine boots into
+EOF
+}
+
 require_registered() {
     if ! steamosctl get-valid-desktop-sessions 2>/dev/null | grep -q "$SESSION"; then
-        printf 'install: %s is not registered. Run `%s register` first.\n' "$SESSION" "$0" >&2
+        printf 'install: %s is not set up. Run `%s` first.\n' "$SESSION" "$0" >&2
         exit 1
     fi
 }
 
-case "${1:-all}" in
-all)
+command=""
+no_enable=""
+for arg in "$@"; do
+    case "$arg" in
+    --no-enable) no_enable=1 ;;
+    -*)
+        usage
+        exit 2
+        ;;
+    *) command=$arg ;;
+    esac
+done
+
+case "${command:-install}" in
+install)
     register
-    printf 'registered from %s\n' "$ROOT"
-    "$0" enable
-    ;;
-register)
-    register
-    printf 'registered from %s\n' "$ROOT"
-    printf 'sessions now offered: %s\n' \
-        "$(steamosctl get-valid-desktop-sessions | sed -n 's/^- //p' | tr '\n' ' ')"
-    printf '\nTry it for one boot:  %s try\n' "$0"
+    printf 'set up from %s\n' "$ROOT"
+    if [ -n "$no_enable" ]; then
+        printf 'the machine still boots into Game Mode; to change that: %s enable\n' "$0"
+    else
+        enable_boot
+    fi
     ;;
 update)
     need git
@@ -119,7 +152,8 @@ update)
     # Re-exec rather than carrying on: the pull just rewrote this very file, and
     # a running shell keeps reading its script from the changed offset. Observed
     # doing exactly that — the old register() ran after a new one was pulled in.
-    exec "$ROOT/install.sh" register
+    # --no-enable because updating must not change how the machine boots.
+    exec "$ROOT/install.sh" --no-enable
     ;;
 try)
     require_registered
@@ -127,11 +161,7 @@ try)
     steamosctl switch-to-desktop-mode "$SESSION"
     ;;
 enable)
-    require_registered
-    steamosctl set-default-desktop-session "$SESSION"
-    steamosctl set-default-login-mode desktop
-    printf 'the machine now boots into the picker\n'
-    printf 'to undo: %s disable\n' "$0"
+    enable_boot
     ;;
 disable)
     steamosctl set-default-login-mode game
@@ -144,10 +174,10 @@ uninstall)
     sudo systemctl daemon-reload
     sudo rm -rf "$STATE"
     systemctl --user restart steamos-manager.service || true
-    printf 'unregistered. The checkout at %s is still there; remove it if you want it gone.\n' "$ROOT"
+    printf 'removed. The checkout at %s is still there; delete it if you want it gone.\n' "$ROOT"
     ;;
 *)
-    printf 'usage: %s [register|try|enable|disable|update|uninstall]\n' "$0" >&2
+    usage
     exit 2
     ;;
 esac

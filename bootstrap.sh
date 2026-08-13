@@ -13,6 +13,7 @@
 # a boot — see bin/steamos-session-picker.
 #
 # To undo:  /opt/steamos-session-picker/install.sh disable
+# To set up without changing what boots:  PICKER_ARGS=--no-enable
 set -eu
 
 REPO="${PICKER_REPO:-https://github.com/VolanDeVovan/steamos-session-picker.git}"
@@ -40,4 +41,4 @@ else
     git clone --branch "$BRANCH" "$REPO" "$DEST"
 fi
 
-exec "$DEST/install.sh"
+exec "$DEST/install.sh" ${PICKER_ARGS:-}

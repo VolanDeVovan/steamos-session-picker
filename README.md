@@ -91,13 +91,13 @@ anything:
 
 ```sh
 cd /opt/steamos-session-picker
-./install.sh            # the whole thing, same as the one-liner
-./install.sh register   # register only, changing no defaults
-./install.sh try        # start the picker once; a reboot puts things back
-./install.sh enable     # make it the session the machine boots into
-./install.sh disable    # back to Game Mode
-./install.sh update     # git pull, then re-register
-./install.sh uninstall  # remove every trace
+./install.sh             # the whole thing, same as the one-liner
+./install.sh try         # start the picker once; the next boot is unaffected
+./install.sh enable      # make it the session the machine boots into
+./install.sh disable     # back to Game Mode
+./install.sh update      # git pull, then re-apply
+./install.sh uninstall   # remove every trace
+./install.sh --no-enable # set up, but keep booting as before
 ```
 
 Nothing here reboots; the picker appears at the next boot, or immediately via
