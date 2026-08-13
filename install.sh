@@ -284,7 +284,14 @@ install)
     keep_remote_alive
     printf 'set up from %s, for user %s\n' "$ROOT" "$user"
     if [ -n "$no_enable" ]; then
-        printf 'the machine still boots into Game Mode; to change that: %s enable\n' "$0"
+        # `update` comes through here, on a machine that is usually already
+        # booting into the picker — so say what is true rather than assuming
+        # this is a first run.
+        if [ -f "$SDDM_CONF" ]; then
+            printf 'the machine still boots into the picker\n'
+        else
+            printf 'the machine still boots into Game Mode; to change that: %s enable\n' "$0"
+        fi
     else
         enable_boot
     fi
