@@ -166,6 +166,21 @@ The threshold matters: the compositor delivers a motion event for the cursor it
 parks in the middle of the screen at startup, so anything simpler would show a
 cursor nobody asked for and preselect the middle card.
 
+**And it has to be measured in scene coordinates**, which is not a detail. A
+card scales when the selection reaches it, so it moves *under* a stationary
+cursor; in that card's own frame the pointer has then travelled, and a threshold
+applied there fires on a pointer nobody touched. What that looked like on the
+machine: with a cursor resting anywhere on the shelf, every d-pad press moved
+the selection and was instantly handed back to the card under the cursor, so the
+shelf could not be driven at all. Given that the Steam Controller publishes its
+trackpad as a mouse, a cursor resting on the shelf is the normal state of
+things, not an unlucky one.
+
+One baseline for the whole shelf, in scene coordinates, and a cursor nobody is
+touching keeps the same position however much the shelf rearranges itself.
+Reproduced in the VM by parking a uinput pointer on a card and pressing right
+twice, which is also how the fix was checked.
+
 ## What is not there
 
 **No virtual keyboard.** Stock SteamOS loads qtvirtualkeyboard into the greeter,
