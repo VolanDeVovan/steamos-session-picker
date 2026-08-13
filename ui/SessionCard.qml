@@ -93,7 +93,11 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onEntered: card.pointerEntered()
+        // Selection follows the pointer only once it has actually moved. At
+        // startup the cursor sits wherever the compositor parked it — the
+        // middle of a television — and onEntered would hand focus to whatever
+        // card happens to be under it.
+        onPositionChanged: card.pointerEntered()
         onClicked: card.activated()
     }
 }
